@@ -1,7 +1,10 @@
 from llist import dllist, dllistnode
 
 class NodeValue:
-    def derive_implication(self, node_values):
+    def derive_implication(self, values, n):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def create_empty(self):
         raise NotImplementedError("Subclasses should implement this!")
 
     def __str__(self):
@@ -10,21 +13,19 @@ class NodeValue:
 
 class PatternReader:
     class Node:
-        def __init__(self, name, value=None):
+        def __init__(self, name, lesser_values=None):
             self.name = name
-            self.value = value
-            self.first_value = value
             self.values = dllist()
+            
+            if lesser_values is not None:
+                self.lesser_values = lesser_values
+            else:
+                self.lesser_values = dllist()
+
             self.has_bigger = False
             self.lesser_from_bigger = dllist()
             self.bigger = self.calculate_bigger()
             self.incremented = self.calculate_incremented()
-    
-
-            # Initialize values
-            if value is not None:
-                self.values.append(value)
-                self.first_value = value
 
 
         def name_equals(self, other_name):
@@ -121,6 +122,11 @@ class PatternReader:
 
             return False
 
+        def get_values(self):
+            return self.values
+
+        #not needed from here
+
         def set_value(self, value):
             self.value = value
             if self.first_value is None:
@@ -128,13 +134,22 @@ class PatternReader:
             self.values.append(value)
 
         def get_value(self):
-            return self.value
-
-        def get_values(self):
-            return self.values
+            if len(self.values) <= 0:
+                return None
+            return self.values.nodeat(len(self.values) - 1).value
 
         def get_first_value(self):
-            return self.first_value
+            if len(self.values) <= 0:
+                return None
+            return self.values.nodeat(0).value
+
+        #to here
+
+        def get_lesser_values(self):
+            return self.lesser_values
+
+        def set_lesser_values(self, lesser_values):
+            self.lesser_values = lesser_values
 
         def get_name(self):
             return self.name
@@ -158,10 +173,27 @@ class PatternReader:
             values_str = ""
             values = self.get_values()
             for i in range(len(values)):
-                values_str += str(values[i])
+                values_str += str(values.nodeat(i).value)
                 if i < len(values) - 1:
                     values_str += " | "
-            return f"Node(Name: {self.get_name()}, Values: {values_str})"
+            values_str = values_str.strip()
+            values_str = values_str.replace("\n", "\n\t\t")
+
+            lesser_values_str = ""
+            lesser_values = self.get_lesser_values()
+            for i in range(len(lesser_values)):
+                lesser_values_str += str(lesser_values.nodeat(i).value)
+                if i < len(lesser_values) - 1:
+                    lesser_values_str += " | "
+            lesser_values_str = lesser_values_str.strip()
+            lesser_values_str = lesser_values_str.replace("\n", "\n\t\t")
+
+            return f"Node(Name: {self.get_name()} Values: {values_str})"
+            
+            if self.name_equals(dllist([0])) or self.name_equals(dllist([1])) and False:
+                return f"Node(\n\n\tName: {self.get_name()}\n\n\tValues:\n\n\t\t{values_str}\n)"
+            else: 
+                return f"Node(\n\n\tName: {self.get_name()}\n\n\tLesser values:\n\n\t\t{lesser_values_str}\n\n\tValues:\n\n\t\t{values_str}\n)"
 
     def __init__(self):
         self.node_list = dllist()
@@ -175,15 +207,23 @@ class PatternReader:
         last_change = None
         self.pattern_length += 1
 
-        def append_node(start_index, new_value):
+        def append_node(start_index, lesser_value = None): #the argument should be the lesser value
             
-            implication = None
-            
+            #instead, just add an empty value to the values, and upon creating a new node, make its lesser values the previous nodes values list
+
+            #implication = None
+            values = None
+
             if start_index < len(self.node_list):
-                implication = new_value.derive_implication(self.node_list.nodeat(start_index).value.get_values())
-                self.node_list.nodeat(start_index).value.set_value(new_value)
-                new_value = implication
+                #implication = new_value.derive_implication(self.node_list.nodeat(start_index).value.get_values())
+                #self.node_list.nodeat(start_index).value.set_value(new_value)
+                #new_value = implication
                 
+                self.node_list.nodeat(start_index).value.get_lesser_values().append(lesser_value)
+                new_empty = self.node_list.nodeat(0).value.get_value().create_empty()
+                values = self.node_list.nodeat(start_index).value.get_values()
+                values.append(new_empty)
+
                 start_index += 1
 
             temp_index = start_index
@@ -192,27 +232,36 @@ class PatternReader:
             for i in range(start_index, len(self.node_list)):
                 if self.node_list.nodeat(i).value.get_name() == name_to_look:
                     temp_index = i + 1
-                    implication = new_value.derive_implication(self.node_list.nodeat(i).value.get_values())
-                    self.node_list.nodeat(i).value.set_value(new_value)
-                    new_value = implication
+                    #implication = new_value.derive_implication(self.node_list.nodeat(i).value.get_values())
+                    #self.node_list.nodeat(i).value.set_value(new_value)
+                    #new_value = implication
+
+                    values = self.node_list.nodeat(i).value.get_values()
+                    values.append(pattern.create_empty())
                 else:
                     break
 
             if temp_index < len(self.node_list):
-                self.node_list.insert(self.Node(dllist([1]), new_value), self.node_list.nodeat(temp_index))
+                self.node_list.insert(self.Node(dllist([1]), values), self.node_list.nodeat(temp_index))
+                self.node_list.nodeat(temp_index).value.get_values().append(pattern.create_empty())
             elif len(self.node_list):
-                self.node_list.append(self.Node(dllist([1]), new_value))
+                self.node_list.append(self.Node(dllist([1]), values))
+                self.node_list.nodeat(temp_index).value.get_values().append(pattern.create_empty())
             else:
-                self.node_list.append(self.Node(dllist([0]), new_value))
+                self.node_list.append(self.Node(dllist([0]), values))
+                self.node_list.nodeat(temp_index).value.get_values().append(pattern.create_empty())
 
             return temp_index
 
-        temp_index = append_node(0, pattern)
+        #the 0th node doesnt need lesser values, but its value should be set by the pattern
+        temp_index = append_node(0)
+        self.node_list.nodeat(0).value.get_values().last.value = pattern
 
         while True:
             
             is_there_same_below = False
-            last_value_implication = None
+            is_there_bigger_below = False
+            
             first_values = dllist()
             name_to_look = self.node_list.nodeat(temp_index).value.get_name()
             
@@ -220,52 +269,49 @@ class PatternReader:
                 i = temp_index - 1 - i_n
 
                 if self.node_list.nodeat(i).value.bigger_than(name_to_look):
+                    #also save if there is bigger below, so we know if this is the first
+                    is_there_bigger_below = True
                     break
                 elif self.node_list.nodeat(i).value.name_equals(name_to_look):
                     is_there_same_below = True
-                    first_values.appendleft(self.node_list.nodeat(i).value.get_first_value())
+                    first_values.appendleft(self.node_list.nodeat(i).value.get_values().first.value)
+                    break
+                    #enough just once, can break here, save only the previous value
 
-            if is_there_same_below == True:
-                last_value_implication = self.node_list.nodeat(temp_index).value.get_first_value().derive_implication(first_values)
+            #if is_there_same_below == True:
+                #last_value_implication = self.node_list.nodeat(temp_index).value.get_first_value().derive_implication(first_values)
+                #no need to calculate implication
 
             if is_there_same_below == False:
                 if self.node_list.nodeat(temp_index).value.get_has_bigger() == False:
                     last_change = self.node_list.nodeat(temp_index).value.get_value()
                     break
 
-                name_to_look = self.node_list.nodeat(temp_index).value.get_lesser_from_bigger()
+            
+                #name_to_look = self.node_list.nodeat(temp_index).value.get_name()
+                lesser_name = self.node_list.nodeat(temp_index).value.get_lesser_from_bigger()
 
                 is_lesser_from_bigger_there = False
                 lesser_index = temp_index
                 first_values.clear()
 
-                while True:
-                    for i_n in range(lesser_index):
-                        i = lesser_index - 1 - i_n
-                        if self.node_list.nodeat(i).value.bigger_than(name_to_look):
-                            break
-                        if self.node_list.nodeat(i).value.name_equals(name_to_look):
-                            is_lesser_from_bigger_there = True
-                            lesser_index = i
-
-                    if is_lesser_from_bigger_there == False:
+                for i_n in range(temp_index):
+                    i = temp_index - 1 - i_n
+                    if self.node_list.nodeat(i).value.bigger_than(name_to_look):
+                        is_lesser_from_bigger_there = False
                         break
-                    if lesser_index == temp_index:
+                    if self.node_list.nodeat(i).value.name_equals(name_to_look):
+                        is_lesser_from_bigger_there = False
                         break
+                    if self.node_list.nodeat(i).value.name_equals(lesser_name):
+                        is_lesser_from_bigger_there = True
+                        lesser_index = i
 
-                    first_values.appendleft(self.node_list.nodeat(lesser_index).value.get_first_value())
-                    name_to_look = self.node_list.nodeat(lesser_index).value.get_lesser_from_bigger()
+                if is_lesser_from_bigger_there == False:
+                    break
 
-                    if self.node_list.nodeat(lesser_index).value.get_has_bigger() == False:
-                        break
+                first_values.appendleft(self.node_list.nodeat(lesser_index).value.get_values().first.value)
 
-                    if len(name_to_look) <= 1:
-                        if name_to_look.nodeat(0) <= 1:
-                            break
-
-                if is_lesser_from_bigger_there == True:
-                    last_value_implication = self.node_list.nodeat(temp_index).value.get_first_value().derive_implication(first_values)
-                
                 name_to_look = self.node_list.nodeat(temp_index).value.get_bigger()
             else:
                 name_to_look = self.node_list.nodeat(temp_index).value.get_incremented()
@@ -283,36 +329,32 @@ class PatternReader:
 
                 index_to_put += 1
 
+            first_values.append(self.node_list.nodeat(temp_index).value.get_values().first.value)
+
             if is_there_already == True:
-                temp_index = append_node(index_to_put, last_value_implication)
+                temp_index = append_node(index_to_put, first_values.last.value)
             else:
-                
                 if index_to_put < len(self.node_list):
-                    self.node_list.insert(self.Node(name_to_look, last_value_implication), self.node_list.nodeat(index_to_put))
+                    self.node_list.insert(self.Node(name_to_look, first_values), self.node_list.nodeat(index_to_put))
+                    self.node_list.nodeat(index_to_put).value.get_values().append(pattern.create_empty())
                 else:
-                    self.node_list.append(self.Node(name_to_look, last_value_implication))
+                    self.node_list.append(self.Node(name_to_look, first_values))
+                    self.node_list.nodeat(index_to_put).value.get_values().append(pattern.create_empty())
 
                 temp_index = index_to_put
         
         return last_change
 
 
-        if self.pattern_length <= 1:
-            last_change = None
-
-        return last_change
+    def calculate_values(self):
+        for j in range(1, len(self.node_list)):
+            for i, value in enumerate(self.node_list.nodeat(j).value.get_values()):
+                lesser_values = self.node_list.nodeat(j).value.get_lesser_values()
+                value.derive_implication(lesser_values, i)
+                
 
     def __str__(self):
         return "\n".join(str(node) for node in self.node_list)
 
-# Example usage:
-# Define a subclass of NodeValue with actual implementation
-class MyNodeValue(NodeValue):
-    def derive_implication(self, node_values):
-        # Example implementation of derive_implication
-        return self
-
-    def __str__(self):
-        return "NodeValue"
 
 

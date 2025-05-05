@@ -1,45 +1,44 @@
 import PatternReader
 import time
 import random
+import string
 import matplotlib.pyplot as plt
 
-
-class BoolNodeValue:
-    
-    def __init__(self, value):
-        self.value = value
-
-    def derive_implication(self, values):
-        
-        result = self.value ^ values.last.value.value
-
-        return BoolNodeValue(result)
-
-    def __str__(self):
-        return str(self.value)
+def random_chars():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     
 class IntNodeValue:
     
     def __init__(self, value):
         self.value = value
 
-    def derive_implication(self, values):
+    def derive_implication(self, values, n):
         
-        result = self.value + values.last.value.value
+        #result = self.value + values.last.value.value
+        result = values.nodeat(n).value.value + values.nodeat(n + 1).value.value
         result %= 2
 
-        return IntNodeValue(result)
+        #self.value = values.nodeat(n + 1).value
+        #self.value = random_chars()
+        self.value = result
+
+    def create_empty(self):
+        return IntNodeValue(0)
 
     def __str__(self):
         return str(self.value)
     
 pattern_reader = PatternReader.PatternReader()
 
+elements = []
+for i in range(5):
+    elements.append(round(random.random()))
+
 calculation_lenghts = []
 square_results = []
-for i in range(100):
+for i in range(len(elements)):
     start_time = time.perf_counter()
-    element = round(random.random())
+    element = elements[i]
     pattern_reader.interpretation(IntNodeValue(element))
     delta_time = time.perf_counter() - start_time
     calculation_lenghts.append(len(pattern_reader.node_list))
@@ -48,9 +47,19 @@ for i in range(100):
 
 plt.plot(calculation_lenghts, marker=',', color='blue', label='PatternReader')
 plt.plot(square_results, marker=',', color='orange', label='Square')
-plt.show()
+#plt.show()
 
-print(pattern_reader)
+pattern_reader.calculate_values()
+#print(pattern_reader)
+
+sum = 0
+for node in pattern_reader.node_list:
+    sum += len(node.get_values())
+
+print(sum)
+
+with open('txt/PRTestOutput.txt', 'w', encoding="utf-8") as file:
+    file.write(str(pattern_reader))
 
         
         
