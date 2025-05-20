@@ -20,6 +20,10 @@ model = GPT2LMHeadModel.from_pretrained(model_name)
 model.to('cuda')
 model.eval()
 
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.padding_side = 'left'
+#tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+
 #nltk.download('punkt')
 #nltk.download('punkt_tab')
 
@@ -27,16 +31,86 @@ whitespace = string.whitespace + chr(160)
 
 # Use the custom stopping criteria
 stop_criteria = StopAtSentenceEnd(tokenizer)
+
+max_batch_size = 2
     
 class GPTNodeValue(NodeValue):
     
-    def __init__(self, value = ""):
+    def __init__(self, value = []):
         self.value = value
 
-    def inference(input_text):
-        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    def is_acceptable(result, i):
 
-        inputs = tokenizer(input_text, return_tensors="pt", padding=True, truncation=True, max_length=1024).to('cuda')
+        sentence_end_punctuation = ".!?"
+
+        amount_generated = len(result.split())
+        generation_log = "amount generated: " + str(amount_generated)
+        if i > 0:
+            generation_log += " try: " + str(i + 1)
+
+        repeated_punctuations = ""
+        last_punctuation = ""
+        repeat_sum = 0
+        max_repeat_sum = 0
+        for char in result:
+            if char in string.punctuation:
+                if last_punctuation == char:
+                    repeat_sum += 1
+                    if len(repeated_punctuations) <= 0 or not repeated_punctuations[-1] == last_punctuation:
+                        repeated_punctuations += last_punctuation
+                    repeated_punctuations += char
+                else:
+                    if max_repeat_sum < repeat_sum:
+                        max_repeat_sum = repeat_sum
+                    repeat_sum = 1
+                    last_punctuation = char
+
+        begin_punctuations = ""
+        for char in result:
+            if char in string.punctuation:
+                begin_punctuations += char
+            else:
+                break
+
+        illegal_chars = ""
+        legal_chars = string.ascii_letters + string.digits + whitespace + string.punctuation
+        legal_chars += chr(160)
+        for char in result:
+            if char not in legal_chars:
+                illegal_chars += char
+        
+        should_regenerate = False
+
+        if max_repeat_sum > 3:
+            generation_log += " too much repeated punctuations: " + repeated_punctuations
+            should_regenerate = True
+
+        if len(begin_punctuations) > 0:
+            generation_log += " punctuations at the beginning: " + begin_punctuations
+            should_regenerate = True
+
+        if len(illegal_chars) > 0:
+            orders = ""
+            for char in illegal_chars:
+                orders += str(ord(char)) + ", "
+            generation_log += " illegal chars: " + illegal_chars + " orders: " + orders
+            should_regenerate = True
+
+        if last_punctuation not in sentence_end_punctuation:
+            generation_log += " bad ending: " + result[-1]
+            should_regenerate = True
+
+        if amount_generated < 2:
+            should_regenerate = True
+
+        print(generation_log)
+
+        return not should_regenerate
+        
+
+    def inference(input_texts):
+
+        inputs = tokenizer(input_texts, return_tensors="pt", padding=True, truncation=True, max_length=1024).to('cuda')
 
         # Forward pass to get model predictions
         with torch.no_grad():
@@ -55,105 +129,82 @@ class GPTNodeValue(NodeValue):
                 stopping_criteria=StoppingCriteriaList([stop_criteria])
             )
 
-        generated_tokens = outputs[0, inputs.input_ids.shape[-1]:]  # Slice to keep only new tokens
-        generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        generated_texts = []
+        for output in outputs:
+            #generated_tokens = output[inputs.input_ids.shape[-1]:]  # Slice to keep only new tokens
+            
+            start_index = inputs.input_ids.shape[-1]
+            generated_tokens = output[start_index:] if output.shape[0] > start_index else output
+
+            
+            generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            generated_texts.append(generated_text)
                                   
-        return generated_text
+        return generated_texts
 
-    def derive_implication(self, values, n):
 
-        input_sentences = ""
-        result = ""
+    def derive_implication(self, values, n): #values is 2 dimensional
+
+        input_sequences = {}
+        result = []
+        batch_size = len(values.nodeat(0).value.value)
         
-        for i in range(n + 1):
-            value = values.nodeat(i).value.value
-            if len(input_sentences) > 0:
-                if input_sentences[-1] not in whitespace:
-                    if len(value) > 0:
-                        if value[0] not in whitespace:
-                            input_sentences += " "
-            input_sentences += value
+        for j in range(batch_size):
+            input_sequences[j] = ""
+            result.append("")
+            for i in range(n + 1):
+                value = values.nodeat(i).value.value[j]
+                if len(input_sequences[j]) > 0:
+                    if input_sequences[j][-1] not in whitespace:
+                        if len(value) > 0:
+                            if value[0] not in whitespace:
+                                input_sequences[j] += " "
+                input_sequences[j] += value
         
-        if len(input_sentences) > 0:
-            if input_sentences[-1] not in whitespace:
-                input_sentences += " "
+        
+        for j in range(len(input_sequences)):
+            if len(input_sequences[j]) > 0:
+                if input_sequences[j][-1] not in whitespace:
+                    input_sequences[j] += " "
 
-        should_regenerate = True
+
         i = 0
-        while should_regenerate:
-            new_value = GPTNodeValue.inference(input_sentences)
-            sentences = sent_tokenize(new_value)
-            if len(sentences) > 0:
-                result = sentences[0]
-
-            amount_generated = len(result.split())
-            generation_log = "amount generated: " + str(amount_generated)
-            if i > 0:
-                generation_log += " try: " + str(i + 1)
+        while len(input_sequences) != 0:
             
-            repeated_punctuations = ""
-            last_punctuation = ""
-            repeat_sum = 0
-            max_repeat_sum = 0
-            for char in result:
-                if char in string.punctuation:
-                    if last_punctuation == char:
-                        repeat_sum += 1
-                        if len(repeated_punctuations) <= 0 or not repeated_punctuations[-1] == last_punctuation:
-                            repeated_punctuations += last_punctuation
-                        repeated_punctuations += char
-                    else:
-                        if max_repeat_sum < repeat_sum:
-                            max_repeat_sum = repeat_sum
-                        repeat_sum = 1
-                        last_punctuation = char
-
-            begin_punctuations = ""
-            for char in result:
-                if char in string.punctuation:
-                    begin_punctuations += char
-                else:
-                    break
-
-            illegal_chars = ""
-            legal_chars = string.ascii_letters + string.digits + whitespace + string.punctuation
-            legal_chars += chr(160)
-            for char in result:
-                if char not in legal_chars:
-                    illegal_chars += char
+            inputs_for_inference = []
+            keyStr = "keys: "
+            for key in input_sequences:
+                inputs_for_inference.append(input_sequences[key])
+                keyStr += str(key) + " "
+            print(keyStr)
             
-            should_regenerate = False
+            
+            new_values = GPTNodeValue.inference(inputs_for_inference)
+            to_pop = []
+            for j, key in enumerate(input_sequences):
 
-            if max_repeat_sum > 2:
-                generation_log += " too much repeated punctuations: " + repeated_punctuations
-                should_regenerate = True
+                new_value = new_values[j]
+                sentences = sent_tokenize(new_value)
+                if len(sentences) > 0:
+                    new_value = sentences[0]
 
-            if len(begin_punctuations) > 0:
-                generation_log += " punctuations at the beginning: " + begin_punctuations
-                should_regenerate = True
+                if new_value[-1] == chr(160):
+                    new_value[-1] = " "
+                new_value = new_value.strip()
 
-            if len(illegal_chars) > 0:
-                orders = ""
-                for char in illegal_chars:
-                    orders += str(ord(char)) + ", "
-                generation_log += " illegal chars: " + illegal_chars + " orders: " + orders
-                should_regenerate = True
+                if GPTNodeValue.is_acceptable(new_value, i):
+                    to_pop.append(key)
+                    result[key] = new_value
 
-            if amount_generated < 2:
-                should_regenerate = True
-
-            print(generation_log)
+            for key in to_pop:
+                input_sequences.pop(key)
             
             i += 1
 
-        result = result.strip()
-        if result[-1] in whitespace:
-            result = result[:-1]
-        #print(input_sentences + " " + result)
         self.value = result
 
     def create_empty(self):
-        return GPTNodeValue("")
+        return GPTNodeValue([])
 
     def __str__(self):
-        return self.value
+        return str(self.value)

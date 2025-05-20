@@ -176,8 +176,8 @@ class PatternReader:
                 values_str += str(values.nodeat(i).value)
                 if i < len(values) - 1:
                     values_str += " | "
-            values_str = values_str.strip()
-            values_str = values_str.replace("\n", "\n\t\t")
+            #values_str = values_str.strip()
+            #values_str = values_str.replace("\n", "\n\t\t")
 
             lesser_values_str = ""
             lesser_values = self.get_lesser_values()
@@ -185,8 +185,8 @@ class PatternReader:
                 lesser_values_str += str(lesser_values.nodeat(i).value)
                 if i < len(lesser_values) - 1:
                     lesser_values_str += " | "
-            lesser_values_str = lesser_values_str.strip()
-            lesser_values_str = lesser_values_str.replace("\n", "\n\t\t")
+            #lesser_values_str = lesser_values_str.strip()
+            #lesser_values_str = lesser_values_str.replace("\n", "\n\t\t")
 
             return f"Node(Name: {self.get_name()} Values: {values_str})"
             

@@ -21,13 +21,21 @@ with open('txt/input.txt', 'r', encoding="utf-8") as file:
 
 input_str = input_read
 
-input_list = sent_tokenize(input_str)
+sentences = sent_tokenize(input_str)
+input_list = []
+for sentence in sentences:
+    batch = []
+    for i in range(3):
+        batch.append(sentence)
+
+    input_list.append(batch)
+
 
 #print(input_list)
 print(len(input_list))
 
 for i in range(len(input_list)):
-    if i > 13:
+    if i > 5:
         break
     
     string_to_process = input_list[i]
