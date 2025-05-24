@@ -1,223 +1,56 @@
 import torch, nltk
-from transformers import GPT2Tokenizer, GPT2LMHeadModel
-from transformers import StoppingCriteria, StoppingCriteriaList
 from nltk.tokenize import sent_tokenize
+from datasets import load_dataset
 
 import PatternReader
 from PatternReader import NodeValue
 
-from StopAtSentenceEnd import StopAtSentenceEnd
+from GPTNodeValue import GPTNodeValue
+
+import json
+import matplotlib.pyplot as plt
 
 import string
 import time
 import random
 
+nltk.download('punkt')
+nltk.download('punkt_tab')
 
-model_name = 'gpt2'
-tokenizer = GPT2Tokenizer.from_pretrained(model_name)
-model = GPT2LMHeadModel.from_pretrained(model_name)
 
-model.to('cuda')
-model.eval()
-
-#nltk.download('punkt')
-#nltk.download('punkt_tab')
-
-whitespace = string.whitespace + chr(160)
-
-# Use the custom stopping criteria
-stop_criteria = StopAtSentenceEnd(tokenizer)
-    
-class GPTNodeValue(NodeValue):
-    
-    def __init__(self, value = ""):
-        self.value = value
-
-    def inference(input_text):
-        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-
-        inputs = tokenizer(input_text, return_tensors="pt", padding=True, truncation=True, max_length=1024).to('cuda')
-
-        # Forward pass to get model predictions
-        with torch.no_grad():
-            outputs = model.generate(
-                inputs.input_ids,
-                attention_mask=inputs.attention_mask,
-                max_new_tokens=100,              # Large enough to complete sentences
-                #max_length=inputs.input_ids.shape[-1] + 100,  # Current input length + max_new_tokens
-                num_return_sequences=1,
-                no_repeat_ngram_size=2,
-                do_sample=True,
-                top_k=50,
-                top_p=0.95,
-                temperature=1.0,                # Lower temperature for more coherent sentences
-                eos_token_id=tokenizer.eos_token_id,  # Stops generation at end-of-sequence token
-                stopping_criteria=StoppingCriteriaList([stop_criteria])
-            )
-
-        generated_tokens = outputs[0, inputs.input_ids.shape[-1]:]  # Slice to keep only new tokens
-        generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-                                  
-        return generated_text
-
-    def derive_implication(self, values, n):
-
-        input_sentences = ""
-        result = ""
-        
-        for i in range(n + 1):
-            value = values.nodeat(i).value.value
-            if len(input_sentences) > 0:
-                if input_sentences[-1] not in whitespace:
-                    if len(value) > 0:
-                        if value[0] not in whitespace:
-                            input_sentences += " "
-            input_sentences += value
-        
-        if len(input_sentences) > 0:
-            if input_sentences[-1] not in whitespace:
-                input_sentences += " "
-
-        should_regenerate = False
-        for i in range(15):
-            new_value = GPTNodeValue.inference(input_sentences)
-            sentences = sent_tokenize(new_value)
-            if len(sentences) > 0:
-                result = sentences[0]
-
-            amount_generated = len(result.split())
-            generation_log = "amount generated: " + str(amount_generated)
-            if i > 0:
-                generation_log += " try: " + str(i + 1)
-            
-            repeated_punctuations = ""
-            last_punctuation = ""
-            repeat_sum = 0
-            max_repeat_sum = 0
-            for char in result:
-                if char in string.punctuation:
-                    if last_punctuation == char:
-                        repeat_sum += 1
-                        if len(repeated_punctuations) <= 0 or not repeated_punctuations[-1] == last_punctuation:
-                            repeated_punctuations += last_punctuation
-                        repeated_punctuations += char
-                    else:
-                        if max_repeat_sum < repeat_sum:
-                            max_repeat_sum = repeat_sum
-                        repeat_sum = 1
-                        last_punctuation = char
-
-            begin_punctuations = ""
-            for char in result:
-                if char in string.punctuation:
-                    begin_punctuations += char
-                else:
-                    break
-
-            illegal_chars = ""
-            legal_chars = string.ascii_letters + string.digits + whitespace + string.punctuation
-            legal_chars += chr(160)
-            for char in result:
-                if char not in legal_chars:
-                    illegal_chars += char
-            
-            should_regenerate = False
-
-            if max_repeat_sum > 2:
-                generation_log += " too much repeated punctuations: " + repeated_punctuations
-                should_regenerate = True
-
-            if len(begin_punctuations) > 0:
-                generation_log += " punctuations at the beginning: " + begin_punctuations
-                should_regenerate = True
-
-            if len(illegal_chars) > 0:
-                orders = ""
-                for char in illegal_chars:
-                    orders += str(ord(char)) + ", "
-                generation_log += " illegal chars: " + illegal_chars + " orders: " + orders
-                should_regenerate = True
-
-            if amount_generated < 2:
-                should_regenerate = True
-
-            print(generation_log)
-
-            if not should_regenerate:
-                break
-
-        if should_regenerate:
-            input_with_eos = input_sentences
-            if input_with_eos[-1] not in whitespace:
-                input_with_eos += " "
-            input_with_eos += tokenizer.eos_token + " "
-            new_value = GPTNodeValue.inference(input_with_eos)
-            sentences = sent_tokenize(new_value)
-            if len(sentences) > 0:
-                result = sentences[0]
-
-            amount_generated = len(result.split())
-            print("after eos added amount generated: " + str(amount_generated))
-
-        result = result.strip()
-        if result[-1] in whitespace:
-            result = result[:-1]
-        #print(input_sentences + " " + result)
-        self.value = result
-
-    def create_empty(self):
-        return GPTNodeValue("")
-
-    def __str__(self):
-        return self.value
-    
 pattern_reader = PatternReader.PatternReader()
 
-#input_list = ['it', 'was', 'a', 'good', 'movie']
-#input_list = ['it', 'was', 'a', 'good', 'movie', 'i', 'have', 'to', 'admit', 'i', 'liked', 'it', 'very', 'much']
-
-with open('txt/input.txt', 'r', encoding="utf-8") as file:
-    input_read = file.read()
-
-def whitespace_around_punctuation(text, before_too = False):
-    input_str = ""
-    for i in range(len(text)):
-        if i > 0:
-            if text[i] in string.punctuation:   
-                if text[i - 1] not in whitespace:
-                    if before_too:
-                        input_str += " "
-
-        input_str += text[i]
-
-        if i < len(text) - 1:
-            if text[i] in string.punctuation:   
-                if text[i + 1] not in whitespace:
-                    input_str += " "
-
-    return input_str
-
-input_str = input_read
-#input_str = whitespace_around_punctuation(input_read)
-
-#input_list = input_str.split()
+dataset = load_dataset("openwebtext", trust_remote_code=True)
+dataset.shuffle(seed=42)
 
 input_list = []
+sentences_all = []
+for i in range(128):
+    sentences = sent_tokenize(dataset["train"][i]["text"])
 
-input_list = sent_tokenize(input_str)
+    if len(sentences) >= 5:
+        sentences_all.append(sentences)
+
+for i in range(5):
+
+    sentences_at_i = []
+
+    for j in range(len(sentences_all)):
+        sentences_at_i.append(sentences_all[j][i])
+
+    input_list.append(sentences_at_i)
 
 #print(input_list)
 print(len(input_list))
 
 for i in range(len(input_list)):
-    if i > 13:
+    if i > 5:
         break
     
-    string_to_process = input_list[i]
-    pattern_reader.interpretation(GPTNodeValue(string_to_process))
+    pattern_reader.interpretation(GPTNodeValue(input_list[i]))
     
 start_time = time.perf_counter()
-
+GPTNodeValue.should_train = True
 pattern_reader.calculate_values()
 
 total_time = time.perf_counter() - start_time
@@ -225,7 +58,5 @@ print("total_time: " + str(total_time))
 
 with open('txt/output.txt', 'w', encoding="utf-8") as file:
     file.write(str(pattern_reader))
-
-        
-        
+   
 

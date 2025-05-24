@@ -1,58 +1,26 @@
 import torch, nltk
+from accelerate import init_empty_weights, Accelerator
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from transformers import StoppingCriteria, StoppingCriteriaList
 from nltk.tokenize import sent_tokenize
 
+from StopAtSentenceEnd import StopAtSentenceEnd
+
 import time
 
+accelerator = Accelerator()
 model_name = 'gpt2'
 tokenizer = GPT2Tokenizer.from_pretrained(model_name)
 model = GPT2LMHeadModel.from_pretrained(model_name)
 
-model.to('cuda')
+model, tokenizer = accelerator.prepare(model, tokenizer)
+
+device = accelerator.device
+
 model.eval()
 
 #nltk.download('punkt')
 #nltk.download('punkt_tab')
-
-class StopAtSentenceEnd(StoppingCriteria):
-    
-    def __init__(self, tokenizer):
-        self.tokenizer = tokenizer
-        self.sentence_amount = -1
-        self.max_patience = 5
-        self.patience = self.max_patience
-
-    def __call__(self, input_ids, scores, **kwargs):
-        # Decode the new tokens
-        new_tokens_text = self.tokenizer.decode(input_ids[0], skip_special_tokens=True)
-
-        sentences = []
-
-        if self.sentence_amount == -1:
-            sentences = sent_tokenize(new_tokens_text)
-            self.sentence_amount = len(sentences) + 1
-
-        if self.patience <= 1:
-
-            self.patience = self.max_patience
-
-            sentences = sent_tokenize(new_tokens_text)
-
-            if len(sentences) > self.sentence_amount:
-                self.patience = self.max_patience
-                self.sentence_amount = -1
-                return True
-        
-
-        self.patience -= 1
-        
-        return False
-
-    def reset(self):
-        self.patience = self.max_patience
-        self.sentence_amount = -1
-
 
 # Use the custom stopping criteria
 stop_criteria = StopAtSentenceEnd(tokenizer)
@@ -65,7 +33,7 @@ input_text = input_read
 start_time = time.perf_counter()
 
 tokenizer.pad_token = tokenizer.eos_token
-inputs = tokenizer(input_text, return_tensors="pt", padding=True, truncation=True, max_length=1024).to('cuda')
+inputs = tokenizer(input_text, return_tensors="pt", padding=True, truncation=True, max_length=1024).to(device)
 
 # Forward pass to get model predictions
 with torch.no_grad():

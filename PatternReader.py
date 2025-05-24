@@ -348,6 +348,7 @@ class PatternReader:
 
     def calculate_values(self):
         for j in range(1, len(self.node_list)):
+            print("level: " + str(j))
             for i, value in enumerate(self.node_list.nodeat(j).value.get_values()):
                 lesser_values = self.node_list.nodeat(j).value.get_lesser_values()
                 value.derive_implication(lesser_values, i)

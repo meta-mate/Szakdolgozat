@@ -1,4 +1,5 @@
 import torch, nltk
+from accelerate import Accelerator
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from transformers import StoppingCriteria, StoppingCriteriaList
 from transformers import Trainer, TrainingArguments, DataCollatorForLanguageModeling
@@ -11,19 +12,27 @@ import PatternReader
 from PatternReader import NodeValue
 
 from StopAtSentenceEnd import StopAtSentenceEnd
+from SafeTrainer import SafeTrainer
 from LossTrackerCallback import LossTrackerCallback
 
 import string
 import time
 import random
+import json
+import gc
 
 
+accelerator = Accelerator()
 model_name = 'gpt2'
 tokenizer = GPT2Tokenizer.from_pretrained(model_name)
 model = GPT2LMHeadModel.from_pretrained(model_name)
 
-model.to('cuda')
-model.eval()
+model, tokenizer = accelerator.prepare(model, tokenizer)
+device = accelerator.device
+
+#device='cuda'
+#model.to(device)
+#tokenizer.to(device)
 
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = 'left'
@@ -35,13 +44,14 @@ data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
 whitespace = string.whitespace + chr(160)
 
-# Use the custom stopping criteria
 stop_criteria = StopAtSentenceEnd(tokenizer)
 
-batch_size = 32
-train_batch_size = 8
+max_batch_size = 128
+train_batch_size = int(max_batch_size / 8)
     
 class GPTNodeValue(NodeValue):
+
+    should_train = True
 
     loss_trackers = []
     
@@ -91,22 +101,28 @@ class GPTNodeValue(NodeValue):
         should_regenerate = False
 
         if max_repeat_sum > 3:
-            generation_log += " too much repeated punctuations: " + repeated_punctuations
+            generation_log += " too much repeated punctuations: "
+            generation_log += repeated_punctuations
             should_regenerate = True
 
         if len(begin_punctuations) > 0:
-            generation_log += " punctuations at the beginning: " + begin_punctuations
+            generation_log += " punctuations at the beginning: "
+            generation_log += begin_punctuations
             should_regenerate = True
 
         if len(illegal_chars) > 0:
             orders = ""
             for char in illegal_chars:
                 orders += str(ord(char)) + ", "
-            generation_log += " illegal chars: " + illegal_chars + " orders: " + orders
+            generation_log += " illegal chars: "
+            #generation_log += illegal_chars
+            generation_log += " orders: " + orders
+            
             should_regenerate = True
 
         if last_punctuation not in sentence_end_punctuation:
-            generation_log += " bad ending: " + last_punctuation
+            generation_log += " bad ending: "
+            generation_log += last_punctuation
             should_regenerate = True
 
         if amount_generated < 2:
@@ -116,110 +132,151 @@ class GPTNodeValue(NodeValue):
 
         return not should_regenerate
         
-    def train(input_texts):
+    def train(input_texts, batch_size = None):
 
-        loss_tracker = LossTrackerCallback()
+        model.train()
+
+        if batch_size == None:
+            batch_size = train_batch_size
+
+        learning_rate = 5e-5 / (1 + len(GPTNodeValue.loss_trackers))
+
+        loss_tracker = None
 
         dataset = Dataset.from_dict({"text": input_texts})
 
         def tokenize(example):
-            return tokenizer(example["text"], truncation=True, padding="max_length", max_length=128)
+            return tokenizer(example["text"], truncation=True, padding="max_length", max_length=1024)
 
         tokenized_dataset = dataset.map(tokenize, batched=True)
 
-        training_args = TrainingArguments(
-            output_dir="./gpt2-finetuned",
-            overwrite_output_dir=True,
-            per_device_train_batch_size=train_batch_size,
-            num_train_epochs=1,
-            logging_steps=1,
-            save_strategy="epoch",
-            save_total_limit=1,
-            eval_strategy="no",
-            report_to=[],
-        )
+        while batch_size >= 1:
+            try:
+        
+                loss_tracker = LossTrackerCallback()
 
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=tokenized_dataset,
-            data_collator=data_collator,
-            callbacks=[loss_tracker]
-        )
-
-        trainer.train()
-
-        GPTNodeValue.loss_trackers.append(loss_tracker)
-
-        json_data = []
-        for loss_tracker in GPTNodeValue.loss_trackers:    
-            json_data.append({
-                "steps": loss_tracker.steps,
-                "losses": loss_tracker.losses
-            })
-
-        with open('json/losses.json', 'w') as file:
-            json.dump(json_data, file) 
-
-
-
-    def inference(input_texts):
-
-        batches = []
-
-        i = 0
-        while True:
-
-            startIndex = i * batch_size
-            endIndex = min((i + 1) * batch_size, len(input_texts))
-
-            if startIndex >= endIndex:
-                break
-
-            batches.append(input_texts[startIndex : endIndex])
-            
-            if startIndex > len(input_texts):
-                break
-
-            i += 1
-
-
-        generated_texts = []
-        for batch in batches:
-
-            #print("batch remaining: " + str(i))
-            i -= 1
-
-            inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=1024).to('cuda')
-
-            # Forward pass to get model predictions
-            with torch.no_grad():
-                outputs = model.generate(
-                    inputs.input_ids,
-                    attention_mask=inputs.attention_mask,
-                    max_new_tokens=100,              # Large enough to complete sentences
-                    #max_length=inputs.input_ids.shape[-1] + 100,  # Current input length + max_new_tokens
-                    num_return_sequences=1,
-                    no_repeat_ngram_size=2,
-                    do_sample=True,
-                    top_k=50,
-                    top_p=0.95,
-                    temperature=1.0,                # Lower temperature for more coherent sentences
-                    eos_token_id=tokenizer.eos_token_id,  # Stops generation at end-of-sequence token
-                    stopping_criteria=StoppingCriteriaList([stop_criteria])
+                training_args = TrainingArguments(
+                    output_dir="./gpt2-finetuned",
+                    learning_rate=learning_rate,    
+                    overwrite_output_dir=True,
+                    per_device_train_batch_size=batch_size,
+                    auto_find_batch_size = True,
+                    fp16 = True,
+                    num_train_epochs=1,
+                    logging_steps=1,
+                    save_strategy="epoch",
+                    save_total_limit=1,
+                    evaluation_strategy="no",
+                    report_to=[],
                 )
 
-            for output in outputs:
-                #generated_tokens = output[inputs.input_ids.shape[-1]:]  # Slice to keep only new tokens
-                
-                start_index = inputs.input_ids.shape[-1]
-                generated_tokens = output[start_index:] if output.shape[0] > start_index else output
+                trainer = SafeTrainer(
+                    model=model,
+                    args=training_args,
+                    train_dataset=tokenized_dataset,
+                    data_collator=data_collator,
+                    callbacks=[loss_tracker]
+                )
 
-                
-                generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-                generated_texts.append(generated_text)
-                                  
-        return generated_texts
+                trainer.train()
+
+                GPTNodeValue.loss_trackers.append(loss_tracker)
+
+                json_data = []
+                for loss_tracker in GPTNodeValue.loss_trackers:    
+                    json_data.append({
+                        "steps": loss_tracker.steps,
+                        "losses": loss_tracker.losses
+                    })
+
+                with open('json/losses.json', 'w') as file:
+                    json.dump(json_data, file) 
+
+                break
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    print("Too large batch size: " + str(batch_size))
+                    batch_size = int(ceil(batch_size / 2))
+
+
+
+    def inference(input_texts, batch_size = None):
+
+        model.eval()
+
+        if batch_size == None:
+            batch_size = max_batch_size
+
+        inputs = None
+
+        while batch_size >= 1:
+            try:
+
+                batches = []
+
+                i = 0
+                while True:
+
+                    startIndex = i * batch_size
+                    endIndex = min((i + 1) * batch_size, len(input_texts))
+
+                    if startIndex >= endIndex:
+                        break
+
+                    batches.append(input_texts[startIndex : endIndex])
+                    
+                    if startIndex > len(input_texts):
+                        break
+
+                    i += 1
+
+
+                generated_texts = []
+                for batch in batches:
+
+                    #print("batch remaining: " + str(i))
+                    i -= 1
+
+                    inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=1024).to(device)
+
+                    # Forward pass to get model predictions
+                    with torch.no_grad():
+                        outputs = model.generate(
+                            inputs.input_ids,
+                            attention_mask=inputs.attention_mask,
+                            max_new_tokens=100,
+                            num_return_sequences=1,
+                            no_repeat_ngram_size=2,
+                            do_sample=True,
+                            top_k=50,
+                            top_p=0.95,
+                            temperature=1.0,
+                            eos_token_id=tokenizer.eos_token_id,
+                            stopping_criteria=StoppingCriteriaList([stop_criteria])
+                        )
+
+                    for output in outputs:
+                        
+                        start_index = inputs.input_ids.shape[-1]
+                        generated_tokens = output[start_index:] if output.shape[0] > start_index else output
+
+                        
+                        generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+                        generated_texts.append(generated_text)
+                                        
+                return generated_texts
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    del inputs
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    print("Too large batch size: " + str(batch_size))
+                    batch_size = int(ceil(batch_size / 2))
+
 
     def construct_input_dict(values, n):
         input_dict = {}
@@ -258,7 +315,7 @@ class GPTNodeValue(NodeValue):
         for j in range(len(input_dict)):
             result.append("")
 
-        if n == 0:
+        if n == 0 and GPTNodeValue.should_train:
             train_dict = GPTNodeValue.construct_input_dict(values, len(values) - 1)
             train_array = GPTNodeValue.array_from_dict(train_dict)
             GPTNodeValue.train(train_array)
@@ -279,6 +336,7 @@ class GPTNodeValue(NodeValue):
 
             
             new_values = GPTNodeValue.inference(inputs_for_inference)
+            
             to_pop = []
             for j, key in enumerate(input_dict):
 

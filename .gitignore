@@ -1,9 +1,10 @@
 __pycache__
 .vscode
 
-txt
+/txt/*
 txt_saved
 
 gpt2-finetuned
 
-json
+/json/*
+/img/*
