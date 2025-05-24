@@ -28,6 +28,8 @@ tokenizer = GPT2Tokenizer.from_pretrained(model_name)
 model = GPT2LMHeadModel.from_pretrained(model_name)
 
 model, tokenizer = accelerator.prepare(model, tokenizer)
+if hasattr(model, "module"):
+    model = model.module
 device = accelerator.device
 
 #device='cuda'
@@ -191,6 +193,9 @@ class GPTNodeValue(NodeValue):
 
                 with open('json/losses.json', 'w') as file:
                     json.dump(json_data, file) 
+
+                torch.cuda.empty_cache()
+                gc.collect()
 
                 break
 
