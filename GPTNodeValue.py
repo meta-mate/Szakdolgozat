@@ -16,6 +16,7 @@ from SafeTrainer import SafeTrainer
 from LossTrackerCallback import LossTrackerCallback
 
 import string
+import math
 import time
 import random
 import json
@@ -204,7 +205,7 @@ class GPTNodeValue(NodeValue):
                     gc.collect()
                     torch.cuda.empty_cache()
                     print("Too large batch size: " + str(batch_size))
-                    batch_size = int(ceil(batch_size / 2))
+                    batch_size = int(math.ceil(batch_size / 2))
 
 
 
@@ -280,7 +281,7 @@ class GPTNodeValue(NodeValue):
                     gc.collect()
                     torch.cuda.empty_cache()
                     print("Too large batch size: " + str(batch_size))
-                    batch_size = int(ceil(batch_size / 2))
+                    batch_size = int(math.ceil(batch_size / 2))
 
 
     def construct_input_dict(values, n):

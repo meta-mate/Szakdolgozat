@@ -12,14 +12,15 @@ class IntNodeValue:
     def __init__(self, value):
         self.value = value
 
-    def derive_implication(self, values, n):
+    def derive_implication(self, lesser_values, n):
         
-        #result = self.value + values.last.value.value
-        result = values.nodeat(n).value.value + values.nodeat(n + 1).value.value
+        #result = self.value + lesser_values.last.value.value
+        result = lesser_values.nodeat(n).value.value + lesser_values.nodeat(n + 1).value.value
         result %= 2
 
         #self.value = values.nodeat(n + 1).value
         #self.value = random_chars()
+        #result = 0
         self.value = result
 
     def create_empty(self):
@@ -31,7 +32,7 @@ class IntNodeValue:
 pattern_reader = PatternReader.PatternReader()
 
 elements = []
-for i in range(5):
+for i in range(13):
     elements.append(round(random.random()))
 
 calculation_lenghts = []
@@ -43,7 +44,7 @@ for i in range(len(elements)):
     delta_time = time.perf_counter() - start_time
     calculation_lenghts.append(len(pattern_reader.node_list))
     square_results.append(i * i / 3)
-    print("element: " + str(element) + " iteration: " + str(i) + " delta_time: " + str(delta_time))
+    #print("element: " + str(element) + " iteration: " + str(i) + " delta_time: " + str(delta_time))
 
 plt.plot(calculation_lenghts, marker=',', color='blue', label='PatternReader')
 plt.plot(square_results, marker=',', color='orange', label='Square')
