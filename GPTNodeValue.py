@@ -313,7 +313,7 @@ class GPTNodeValue(NodeValue):
         return result
 
 
-    def derive_implication(self, values, n): #values is 2 dimensional
+    def calculate_value(self, values, n): #values is 2 dimensional
 
         input_dict = GPTNodeValue.construct_input_dict(values, n)
         
