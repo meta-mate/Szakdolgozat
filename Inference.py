@@ -25,7 +25,7 @@ model.eval()
 # Use the custom stopping criteria
 stop_criteria = StopAtSentenceEnd(tokenizer)
 
-with open('txt/InferenceInput.txt', 'r', encoding="utf-8") as file:
+with open('txt/inferenceInput.txt', 'r', encoding="utf-8") as file:
     input_read = file.read()
 
 input_text = input_read

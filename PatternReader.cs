@@ -1,558 +1,581 @@
 using System.Collections;
 using System.Collections.Generic;
 
-
-public interface NodeValue<T> where T : NodeValue<T> {
-    T deriveImplication<T>(IndexableLinkedList<T> nodeValues);
-    T createEmpty();
-    T copy();
-    string ToString();
-}
-
-public class PatternReader<T> where T : NodeValue<T>
+public abstract class NodeValue<T1>
 {
 
-    class NameValue : NodeValue<NameValue>
+    public T1 Value { get; set; }
+    public NodeValue(T1 value)
+    {
+        Value = value;
+    }
+    public abstract NodeValue<T1> calculateValue(IndexableLinkedList<NodeValue<T1>> lesserNodes, int index);
+    public abstract NodeValue<T1> createEmpty();
+    public abstract NodeValue<T1> copy();
+    public override string ToString()
+    {
+        return Value.ToString();
+    }
+}
+
+public class NameValue : NodeValue<bool>
+{
+
+    public NameValue(bool value) : base(value) { }
+
+    public override NodeValue<bool> calculateValue(IndexableLinkedList<NodeValue<bool>> lesserNodes, int index)
+    {
+        return createEmpty();
+    }
+
+    public override NodeValue<bool> createEmpty()
+    {
+        return new NameValue(false);
+    }
+
+    public override NodeValue<bool> copy() => new NameValue(Value);
+
+    public override string ToString()
+    {
+        return Value ? "1" : "0";
+    }
+
+}
+
+public class Name
+{
+    public int SimpleValue { get; set; }
+    public PatternReader<bool> PatternReader { get; set; }
+    public Name Incremented { get; set; }
+    public Name Bigger { get; set; }
+    public Name LesserFromBigger { get; set; }
+    public bool HasBigger { get; set; }
+
+    private bool isBiggerCalculated = false;
+
+    public Name(int simpleValue)
+    {
+        SimpleValue = simpleValue;
+        PatternReader = null;
+
+        isBiggerCalculated = false;
+        Bigger = null;
+        LesserFromBigger = null;
+        HasBigger = false;
+    }
+
+    public Name(PatternReader<bool> patternReader)
+    {
+        PatternReader = patternReader;
+    }
+
+    public bool isSimple()
+    {
+        return PatternReader == null;
+    }
+
+    public Name simplify()
+    {
+        if (isSimple()) return this;
+
+        if (PatternReader.PatternLength == 2)
+        {
+            if (this[1].Values.First.Value.Value)
+            {
+                SimpleValue = 1;
+                PatternReader = null;
+                return this;
+            }
+        }
+
+        if (PatternReader.PatternLength == 3)
+        {
+            for (int i = 1; i < this.Count; i++)
+            {
+                for (int j = 0; j < this[i].Values.Count; j++)
+                {
+                    if (i != 2 && j != 0)
+                    {
+                        if (this[i].Values[j].Value.Value)
+                        {
+                            return this;
+                        }
+                    }
+                }
+            }
+
+            SimpleValue = -1;
+            PatternReader = null;
+            return this;
+        }
+        return this;
+    }
+
+    public Node<bool> this[int i] => PatternReader.NodeList[i].Value;
+
+    public void increment()
+    {
+        if (isSimple())
+        {
+            if (SimpleValue > 0)
+            {
+                SimpleValue++;
+            }
+            else
+            {
+                PatternReader = new PatternReader<bool>();
+                for (int i = 0; i < 3; i++)
+                {
+                    PatternReader.interpretation(new NameValue(false));
+                }
+
+                this[1].Values[0].Value.Value = true;
+                this[2].Values[0].Value.Value = true;
+            }
+        }
+        else
+        {
+            int i = 0;
+            IndexableLinkedList<NodeValue<bool>> values = this[1].Values;
+
+            while (true)
+            {
+                while (i >= values.Count)
+                {
+                    PatternReader.interpretation(new NameValue(true));
+                }
+
+                NameValue value = values[i].Value as NameValue;
+                if (!value.Value)
+                {
+                    value.Value = true;
+                    break;
+                }
+
+                i++;
+            }
+        }
+    }
+
+    public static bool operator ==(Name name, Name otherName)
     {
 
-        bool value;
-        public NameValue(bool value)
+        if (name.isSimple() != otherName.isSimple())
         {
-            this.value = value;
+            return false;
         }
 
-        public NameValue deriveImplication<NameValue>(IndexableLinkedList<NameValue> lesserNodes)
+        if (name.isSimple() && otherName.isSimple())
         {
-            return createEmpty();
+            return name.SimpleValue == otherName.SimpleValue;
         }
 
-        public NameValue createEmpty()
+        if (name.Count != otherName.Count)
         {
-            return new NameValue(false);
+            return false;
         }
 
-        public bool getValue() => value;
-
-        public void setValue(bool value) => this.value = value;
-
-        public NameValue copy() => new NameValue(value);
-
-        string ToString()
+        for (int i = 0; i < name.Count; i++)
         {
-            return value ? "1" : "0";
+            for (int j = 0; j < name[i].Values.Count; j++)
+            {
+                bool value1 = name[i].Values[j].Value.Value;
+                bool value2 = otherName[i].Values[j].Value.Value;
+
+
+                if (value1 != value2)
+                {
+                    return false;
+                }
+            }
         }
+
+        return true;
 
     }
 
-    public class Name
+    public static bool operator !=(Name name, Name otherName)
     {
-        int simpleValue;
-        PatternReader<NameValue> patternReader;
-        Name incremented, bigger, lesserFromBigger;
+        return !(name == otherName);
+    }
 
-        public Name(int simpleValue)
+
+    public Name copy(Name copiedName = null)
+    {
+        if (isSimple())
         {
-            this.simpleValue = simpleValue;
+            return new Name(SimpleValue);
         }
-
-        public Name(PatternReader patternReader)
+        else
         {
-            this.patternReader = patternReader;
-        }
-
-        public bool isSimple()
-        {
-            return patternReader == null;
-        }
-
-        public PatternReader<T>.Node this[int i] => patternReader.getNodeList()[i];
-
-        public Name copy()
-        {
-            if (isSimple())
+            PatternReader<bool> copied = null;
+            if (copiedName is not null)
             {
-                return new Name(simpleValue);
+                copied = copiedName.PatternReader;
+            }
+            return new Name(PatternReader.copy(copied));
+        }
+    }
+
+    public Name calculateBigger()
+    {
+        isBiggerCalculated = true;
+
+        HasBigger = false;
+
+        if (isSimple())
+        {
+            if (SimpleValue > 1)
+            {
+                HasBigger = true;
+
+                Bigger = new Name(-1);
+
+                LesserFromBigger = new Name(SimpleValue - 1);
+
+                return Bigger;
             }
             else
             {
-                return new Name(patternReader.copy());
+                return null;
             }
         }
-
-        public void increment()
+        else
         {
-            if (isSimple())
-            {
-                simpleValue++;
-            }
-            else
-            {
-                patternReader.interpretation(new NameValue(true));
-            }
-        }
+            Bigger = copy();
 
-        public static bool operator ==(Name name, Name otherName)
-        {
-
-            if (name.isSimple() != otherName.isSimple())
+            int biggerSize = 0;
+            for (int i = 2; i < Bigger.Count; i++)
             {
-                return false;
-            }
+                int j = 0;
 
-            if (name.isSimple() && otherName.isSimple())
-            {
-                return name.getSimpleValue() == otherName.getSimpleValue();
-            }
+                bool first_lesser = Bigger[i].getLesserValue(0).Value;
+                bool second_lesser = Bigger[i].getLesserValue(1).Value;
 
-            if (name.count() != otherName.count())
-            {
-                return false;
-            }
-
-            for (int i = 0; i < name.count(); i++)
-            {
-                for (int j = 0; j < name[i].getValues().Count; j++)
+                if (first_lesser && second_lesser)
                 {
-                    bool value1 = name[i].getValues()[j].getValue();
-                    bool value2 = otherName[i].getValues()[j].getValue();
+                    int lesser_length = Bigger[i].getLesserLength();
 
-
-                    if (value1 != value2)
+                    for (j = 1; j < lesser_length; j++)
                     {
-                        return false;
-                    }
-                }
-            }
-
-            return true;
-
-        }
-
-        public static bool operator !=(Name name, Name otherName)
-        {
-            return !(name == otherName);
-        }
-
-        public Name copy(Name copiedName = null)
-        {
-            Name name = this;
-
-            if (name.isSimple())
-            {
-                return name.getSimpleValue();
-            }
-
-            if (copiedName == null)
-            {
-                copiedName = new Name(new PatternReader<NameValue>());
-
-                for (int i = 0; i < name.count(); i++)
-                {
-                    copiedName.increment();
-                }
-            }
-
-            for (int i = 0; i < copiedName.count(); i++)
-            {
-                int i_adapted = i;
-
-                while (i_adapted < name.count() && !name[i_adapted].name == copiedName[i].getName())
-                    i_adapted++;
-
-                for (int j = 0; j < copiedName[i].getValues().Count; j++)
-                {
-                    bool value = name[i_adapted].getValues()[j].getValue();
-                    copiedName[i].getValues()[j].getValue() = value;
-                }
-            }
-
-            return copiedName;
-
-        }
-
-        Name calculateIncremented()
-        {
-            incremented = copy();
-
-            if (incremented.isSimple())
-            {
-                incremented.setSimpleValue(name.getSimpleValue() + 1);
-            }
-            else
-            {
-                incremented.increment();
-            }
-
-            this.incremented = incremented;
-            return incremented;
-        }
-
-        Name calculateBigger()
-        {
-            Name name = this;
-
-            hasBigger = false;
-
-            if (name.isSimple())
-            {
-                if (name.getSimpleValue() > 1)
-                {
-
-                    Name bigger = new Name(new PatternReader<NameValue>());
-
-                    for (int i = 0; i < 2; i++)
-                    {
-                        bigger.increment();
-                    }
-
-                    bigger[1].getValues()[0] = true;
-
-                    hasBigger = true;
-
-                    this.bigger = bigger;
-                    return bigger;
-
-                }
-                else
-                {
-                    return null;
-                }
-            }
-            else
-            {
-                Name bigger = Name(new PatternReader<NameValue>());
-
-                int biggerSize = 0;
-                for (int i = 1; i < name.count(); i++)
-                {
-                    for (int j = 0; j < name[i].getValues(); j++)
-                    {
-                        bool value = name[i].getValues()[j].getValue();
-                        bool lesserValue = name[i].getLesserValue(j + 1);
-
-                        if (lesserValue)
+                        if (!Bigger[i].getLesserValue(j).Value || j == lesser_length - 1)
                         {
-                            if (!value)
+                            Name template = null;
+
+                            int minSize = 0;
+
+                            for (int k = i + 1; k < Bigger.Count; k++)
                             {
-                                biggerSize = name[i].getFirstOccurences()[j];
-
-                                if (i == 0)
+                                for (int l = 0; l < Bigger[k].Values.Count; l++)
                                 {
-                                    Name template = Name(new PatternReader<NameValue>());
-                                    for (int k = 0; k < name[0].getValues().Count - 1; k++)
+                                    if (Bigger[k].Values[l].Value.Value)
                                     {
-                                        template.increment();
+                                        minSize = Bigger[k].FirstOccurences[l].Value;
                                     }
-                                    lesserFromBigger = copy(template);
+                                    else break;
                                 }
-                                else
-                                {
-                                    lesserFromBigger = copy();
-
-                                    for (int k = 0; k < name[0].getLesserLength(); k++)
-                                    {
-                                        bool condition = k + 1 >= name[0].getLesserLength();
-                                        if (!condition)
-                                            condition = !name[i].getLesserValue(k + 1);
-
-                                        if (condition)
-                                        {
-                                            lesserFromBigger[i].getLesserValue(k) = false;
-                                            break;
-                                        }
-                                    }
-
-                                }
-
-                                break;
                             }
-                        }
-                        else
-                        {
+
+                            int lesserFromBiggerSize = Bigger[i].LesserNodes[j - 1].Value.FirstOccurences[0].Value;
+                            if (lesserFromBiggerSize > minSize) minSize = lesserFromBiggerSize;
+
+                            if (Bigger.PatternReader.PatternLength > minSize)
+                            {
+                                template = new Name(new PatternReader<bool>());
+                                for (int k = 0; k < minSize; k++)
+                                {
+                                    template.PatternReader.interpretation(new NameValue(false));
+                                }
+                            }
+
+                            LesserFromBigger = copy(template);
+                            LesserFromBigger.simplify();
                             break;
                         }
                     }
-                }
+                    
 
-                for (int i = 0; i < biggerSize; i++)
-                {
-                    bigger.increment();
-                }
-
-                bigger = copy(bigger);
-
-                for (int i = 1; i < bigger.count(); i++)
-                {
-                    for (int j = 0; j < bigger[i].getValues(); j++)
+                    j = 0;
+                    while (true)
                     {
-                        bool value = bigger[i].getValues()[j].getValue();
-                        bool lesserValue = bigger[i].getLesserValue(j + 1);
-
-                        if (lesserValue)
+                        while (j >= Bigger[i].Values.Count)
                         {
-                            if (!value)
-                            {
-                                bigger[i].getValues()[j].setValue(true);
-                                hasBigger = true;
-                                break;
-                            }
+                            Bigger.PatternReader.interpretation(new NameValue(false));
                         }
-                    }
-                    if (hasBigger)
-                    {
-                        break;
+
+                        if (!Bigger[i].Values[j].Value.Value)
+                        {
+                            Bigger[i].Values[j].Value.Value = true;
+                            biggerSize = Bigger[i].FirstOccurences[j].Value;
+
+                            int k = 0;
+                            while (Bigger[k] != Bigger[i])
+                            {
+                                for (int l = 0; l < Bigger[k].Values.Count; l++)
+                                {
+                                    Bigger[k].Values[l].Value.Value = false;
+                                }
+
+                                k++;
+                            }
+
+                            if (biggerSize != Bigger.PatternReader.PatternLength)
+                            {
+                                Name template = new Name(new PatternReader<bool>());
+                                for (k = 0; k < biggerSize; k++)
+                                {
+                                    template.PatternReader.interpretation(new NameValue(false));
+                                }
+                                Bigger = Bigger.copy(template);
+                            }
+
+                            HasBigger = true;
+
+
+                            return Bigger;
+                        }
+
+                        j++;
                     }
                 }
-
-                this.bigger = bigger;
-                return this.bigger;
             }
         }
+        return null;
+    }
 
-        public static bool operator >(Name name, Name otherName)
+    public static bool operator >(Name name, Name otherName)
+    {
+
+        if (name.isSimple() && otherName.isSimple())
         {
-
-            if (name.isSimple() && otherName.isSimple())
-            {
-                return name.getSimpleValue() > otherName.getSimpleValue();
-            }
-            else if (!name.isSimple() && otherName.isSimple())
+            if (name.SimpleValue < 0 && otherName.SimpleValue >= 0)
             {
                 return true;
-            }
-            else if (name.isSimple() && !otherName.isSimple())
-            {
+            } else if (otherName.SimpleValue < 0) {
                 return false;
             }
 
-            Name longerName = name;
-            Name shortherName = otherName;
 
-            bool isShorter = name.count() < otherName.count();
+            return name.SimpleValue > otherName.SimpleValue;
+        }
+        else if (!name.isSimple() && otherName.isSimple())
+        {
+            return true;
+        }
+        else if (name.isSimple() && !otherName.isSimple())
+        {
+            return false;
+        }
 
-            if (isShorter)
+        Name longerName = name;
+        Name shortherName = otherName;
+
+        bool isShorter = name.Count < otherName.Count;
+
+        if (isShorter)
+        {
+            longerName = otherName;
+            shortherName = name;
+        }
+
+        int isShorterBigger = 0;
+
+        for (int i = 0; i < shortherName.Count; i++)
+        {
+            int i_adapted = i;
+
+            while (i_adapted < longerName.Count && !(shortherName[i].Name == longerName[i_adapted].Name))
+                i_adapted++;
+
+            IndexableLinkedList<NodeValue<bool>> shorterValues = shortherName[i].Values;
+            IndexableLinkedList<NodeValue<bool>> longerValues = longerName[i_adapted].Values;
+
+            for (int j = 0; j < longerValues.Count; j++)
             {
-                longerName = otherName;
-                shortherName = name;
-            }
+                bool shorterValue = false;
+                bool longerValue = longerValues[j].Value.Value;
 
-            int isShorerBigger = 0;
+                if (j < shorterValues.Count)
+                    shorterValue = shorterValues[j].Value.Value;
 
-            for (int i = 0; i < shortherName.count(); i++)
-            {
-                int i_adapted = i;
-
-                while (i_adapted < longerName.count() && !shortherName[i].name == longerName[i_adapted].getName())
-                    i_adapted++;
-
-                IndexableLinkedList<NameValue> shorterValues = shortherName[i].getValues();
-                IndexableLinkedList<NameValue> longerValues = longerName[i_adapted].getValues();
-
-                for (int j = 0; j < longerValues.Count; j++)
+                if (shorterValue && !longerValue)
                 {
-                    bool shorterValue = false;
-                    bool longerValue = longerValues[j].getValue();
-
-                    if (j < shorterValues.count())
-                        shorterValue = shorterValues[j].getValue();
-
-                    if (shorterValue && !longerValue)
-                    {
-                        isShorerBigger = 1;
-                        break;
-                    }
-                    else if (!shorterValue && longerValue)
-                    {
-                        isShorerBigger = -1;
-                        break;
-                    }
+                    isShorterBigger = 1;
+                    break;
+                }
+                else if (!shorterValue && longerValue)
+                {
+                    isShorterBigger = -1;
+                    break;
                 }
             }
-
-            if (isShorer)
-            {
-                return isShorerBigger > 0;
-            }
-            else
-            {
-                return isShorerBigger > 0;
-            }
         }
 
-        public static bool operator <(Name name, Name otherName)
+        if (isShorter)
         {
-            return otherName > name;
+            return isShorterBigger > 0;
         }
-
-        public int getSimpleValue() => simpleValue;
-
-        public void setSimpleValue(int simpleValue) => this.simpleValue = simpleValue;
-
-        public PatternReader getPatternReader() => patternReader;
-
-        public Name getName() => name;
-
-        public Name getIncremented()
+        else
         {
-            if (incremented == null) calculateIncremented();
-            return incremented;
+            return isShorterBigger > 0;
         }
-
-        public Name getHasBigger()
-        {
-            if (bigger == null) calculateBigger();
-            return hasBigger;
-        }
-
-        public Name getBigger()
-        {
-            if (bigger == null) calculateBigger();
-            return bigger;
-        }
-
-        public Name getLesserFromBigger()
-        {
-            if (bigger == null) calculateBigger();
-            return lesserFromBigger;
-        }
-
-        public int count()
-        {
-            if (isSimple())
-            {
-                return Math.Min(1, simpleValue);
-            }
-            else
-            {
-                return patternReader.getNodeList().Count;
-            }
-        }
-
-        public string ToString()
-        {
-            if (isSimple())
-            {
-                return simpleValue.ToString();
-            }
-            else
-            {
-                return patternReader.ToString();
-            }
-        }
-
     }
 
-    public class Node
+    public static bool operator <(Name name, Name otherName)
     {
-        Name name;
-        IndexableLinkedList<T> values;
-        IndexableLinkedList<Node> lesserNodes;
-        IndexableLinkedList<int> firstOccurences;
-        bool hasBigger = false;
+        return otherName > name;
+    }
 
-        public Node(Name name, IndexableLinkedList<Node> lesserNodes = null)
+    public Name getIncremented()
+    {
+        if (Incremented is null)
         {
-            this.name = name;
-            values = new IndexableLinkedList<T>();
+            Incremented = copy();
+            Incremented.increment();
 
+        }
+        return Incremented;
+    }
 
-            if (lesserNodes != null)
+    public bool getHasBigger()
+    {
+        if (!isBiggerCalculated)
+        {
+            calculateBigger();
+        }
+        return HasBigger;
+    }
+
+    public Name getBigger()
+    {
+        if (!isBiggerCalculated) calculateBigger();
+        return Bigger;
+    }
+
+    public Name getLesserFromBigger()
+    {
+        if (!isBiggerCalculated) calculateBigger();
+        return LesserFromBigger;
+    }
+
+    public int Count
+    {
+        get {
+            if (isSimple())
             {
-                this.lesserNodes = lesserNodes;
+                return 1;
             }
             else
             {
-                this.lesserNodes = new IndexableLinkedList<Node>();
+                return PatternReader.NodeList.Count;
             }
-
-
         }
+    }
 
-        public IndexableLinkedList<T> getValues()
+    public override string ToString()
+    {
+        if (isSimple())
         {
-            return values;
+            return SimpleValue.ToString();
         }
-
-        public void appendValues(T value, int patternLength)
+        else
         {
-            values.Add(value);
-            firstOccurences.Add(patternLength);
+            return PatternReader.ToString();
         }
+    }
 
-        public T getLesserValue(int index)
+}
+
+public class Node<T>
+{
+    public Name Name { get; set; }
+    public IndexableLinkedList<NodeValue<T>> Values { get; set; }
+    public IndexableLinkedList<Node<T>> LesserNodes { get; set; }
+    public IndexableLinkedList<int> FirstOccurences { get; set; }
+
+    public Node(Name name, IndexableLinkedList<Node<T>> lesserNodes = null)
+    {
+        Name = name;
+        Values = new IndexableLinkedList<NodeValue<T>>();
+        FirstOccurences = new IndexableLinkedList<int>();
+
+        if (lesserNodes != null)
         {
-            if (name == Name(1))
-                return lesserNodes[0].getValues()[index];
-            else
-                return lesserNodes[index].getValues()[0];
+            LesserNodes = lesserNodes;
         }
-
-        public int getLesserLength()
+        else
         {
-            return values.count + 1;
-        }
-
-        public IndexableLinkedList<T> getLesserNodes()
-        {
-            return lesserNodes;
-        }
-
-        public IndexableLinkedList<int> getFirstOccurences()
-        {
-            return firstOccurences;
-        }
-
-        public Name getName()
-        {
-            return name;
-        }
-
-        public void setName(Name name)
-        {
-            this.name = name;
-        }
-
-        public string ToString()
-        {
-            string valuesStr = "";
-
-            for (int i = 0; i < values.Count; i++)
-            {
-                valuesStr += values[i];
-                if (i < values.Count - 1) valuesStr += " | ";
-            }
-
-            return "Node(Name: " + name + " Values: " + valuesStr + ")";
+            LesserNodes = new IndexableLinkedList<Node<T>>();
         }
 
     }
 
-    IndexableLinkedList<Node> nodeList = new IndexableLinkedList<Node>();
-    int patternLength = 0;
+    public void appendValues(NodeValue<T> value, int PatternLength)
+    {
+        Values.Add(value);
+        FirstOccurences.Add(PatternLength);
+    }
+
+    public NodeValue<T> getLesserValue(int index)
+    {
+        if (Name == new Name(1))
+            return LesserNodes[0].Value.Values[index].Value;
+        else
+            return LesserNodes[index].Value.Values[0].Value;
+    }
+
+    public int getLesserLength()
+    {
+        return Values.Count + 1;
+    }
+
+    public override string ToString()
+    {
+        string valuesStr = "";
+
+        for (int i = 0; i < Values.Count; i++)
+        {
+            valuesStr += Values[i].Value;
+            if (i < Values.Count - 1) valuesStr += " | ";
+        }
+
+        return "Node(Name: " + Name.ToString() + " Values: " + valuesStr + ")";
+    }
+
+}
+
+public class PatternReader<T>
+{
+
+    public IndexableLinkedList<Node<T>> NodeList { get; set; }
+    public int PatternLength { get; set; }
+
+    public PatternReader()
+    {
+        NodeList = new IndexableLinkedList<Node<T>>();
+        PatternLength = 0;
+    }
 
     public void reset()
     {
-        nodeList.Clear();
-        patternLength = 0;
+        NodeList.Clear();
+        PatternLength = 0;
     }
 
-    public T interpretation(T pattern)
+    public NodeValue<T> interpretation(NodeValue<T> pattern)
     {
+        PatternLength++;
 
-        T lastChange = default(T);
-
-        patternLength++;
-
-        int appendNode(int startIndex, T lesserNode = null)
+        int appendNode(int startIndex, Node<T> lesserNode = null)
         {
 
-            IndexableLinkedList<Node> lesser_nodes = null;
+            IndexableLinkedList<Node<T>> lesser_nodes = new IndexableLinkedList<Node<T>>();
 
-            if (startIndex < nodeList.Count)
+            if (startIndex < NodeList.Count)
             {
 
-                nodeList[startIndex].getLesserNodes().Add(lesserNode);
-                nodeList[startIndex].appendValues(pattern.createEmpty(), patternLength);
+                NodeList[startIndex].Value.LesserNodes.Add(lesserNode);
+                NodeList[startIndex].Value.appendValues(pattern.createEmpty(), PatternLength);
 
                 startIndex++;
             }
@@ -565,13 +588,13 @@ public class PatternReader<T> where T : NodeValue<T>
 
             Name nameToLook = nameOne;
 
-            for (int i = startIndex; i < nodeList.Count; i++)
+            for (int i = startIndex; i < NodeList.Count; i++)
             {
-                if (nodeList[i].getName() == nameToLook)
+                if (NodeList[i].Value.Name == nameToLook)
                 {
                     tempIndex = i + 1;
 
-                    nodeList[i].appendValues(pattern.createEmpty(), patternLength);
+                    NodeList[i].Value.appendValues(pattern.createEmpty(), PatternLength);
 
                 }
                 else
@@ -582,48 +605,51 @@ public class PatternReader<T> where T : NodeValue<T>
 
             if (tempIndex > 0)
             {
-                lesser_nodes.Add(nodeList[tempIndex - 1]);
+                lesser_nodes.Add(NodeList[tempIndex - 1].Value);
             }
 
-            if (tempIndex < nodeList.Count)
+            if (tempIndex < NodeList.Count)
             {
-                nodeList.Insert(tempIndex, new Node(nameOne, lesser_nodes));
-                nodeList[tempIndex].appendValues(pattern.createEmpty(), patternLength);
+                NodeList.Insert(tempIndex, new Node<T>(nameOne, lesser_nodes));
             }
-            else if (nodeList.Count > 0)
+            else if (NodeList.Count > 0)
             {
-                nodeList.Add(new Node(nameOne, lesser_nodes));
-                nodeList[tempIndex].appendValues(pattern.createEmpty(), patternLength);
+                NodeList.Add(new Node<T>(nameOne, lesser_nodes));
             }
             else
             {
-                nodeList.Insert(tempIndex, new Node(nameZero, lesser_nodes));
-                nodeList[tempIndex].appendValues(pattern.createEmpty(), patternLength);
+                NodeList.Insert(tempIndex, new Node<T>(nameZero, lesser_nodes));
             }
+
+            NodeList[tempIndex].Value.appendValues(pattern.createEmpty(), PatternLength);
 
             return tempIndex;
         }
 
         int tempIndex = appendNode(0);
-        nodeList[0].getValues().Last = pattern;
+        NodeList[0].Value.Values.Last.Value = pattern;
 
+
+        NodeValue<T> lastChange;
         while (true)
         {
 
+            lastChange = NodeList[tempIndex].Value.Values.Last.Value;
+
             bool isThereSameBelow = false;
 
-            IndexableLinkedList<T> lesser_nodes = new IndexableLinkedList<T>();
-            Name nameToLook = nodeList[tempIndex].getName();
+            IndexableLinkedList<Node<T>> lesser_nodes = new IndexableLinkedList<Node<T>>();
+            Name nameToLook = NodeList[tempIndex].Value.Name;
 
             for (int i = tempIndex - 1; i >= 0; i--)
             {
-                if (nodeList[i].getName() == nameToLook)
+                if (NodeList[i].Value.Name == nameToLook)
                 {
                     isThereSameBelow = true;
-                    lesser_nodes.AddFirst(nodeList[i]);
+                    lesser_nodes.AddFirst(NodeList[i].Value);
                     break;
                 }
-                if (nodeList[i].getName() > nameToLook)
+                if (NodeList[i].Value.Name > nameToLook)
                     break;
             }
 
@@ -631,14 +657,12 @@ public class PatternReader<T> where T : NodeValue<T>
             if (!isThereSameBelow)
             {
                 if (!nameToLook.getHasBigger())
-                {
-                    lastChange = nodeList[tempIndex].getValues().Last;
                     break;
-                }
 
-                //nameToLook = nodeList[tempIndex].getName();
-                Name lesserName = nameToLook.getName();
+                //nameToLook = NodeList[tempIndex].Name;
+                Name lesser = nameToLook.getLesserFromBigger();
                 Name bigger = nameToLook.getBigger();
+
 
                 bool isLesserFromBiggerThere = false;
                 int lesserIndex = tempIndex;
@@ -646,23 +670,23 @@ public class PatternReader<T> where T : NodeValue<T>
 
                 for (int i = lesserIndex - 1; i >= 0; i--)
                 {
-                    if (nodeList[i].getName() == bigger)
+                    if (NodeList[i].Value.Name == bigger)
                         break;
-                    if (nodeList[i].getName() > bigger)
+                    if (NodeList[i].Value.Name > bigger)
                         break;
 
-                    if (nodeList[i].getName() == nameToLook)
+                    if (NodeList[i].Value.Name == nameToLook)
                     {
                         isLesserFromBiggerThere = false;
                         break;
                     }
-                    if (nodeList[i].getName() > nameToLook)
+                    if (NodeList[i].Value.Name > nameToLook)
                     {
                         isLesserFromBiggerThere = false;
                         break;
                     }
 
-                    if (nodeList[i].getName() == nameToLook)
+                    if (NodeList[i].Value.Name == lesser)
                     {
                         isLesserFromBiggerThere = true;
                         lesserIndex = i;
@@ -672,9 +696,9 @@ public class PatternReader<T> where T : NodeValue<T>
                 if (!isLesserFromBiggerThere)
                     break;
 
-                lesser_nodes.AddFirst(nodeList[lesserIndex]);
+                lesser_nodes.AddFirst(NodeList[lesserIndex].Value);
 
-                nameToLook = nameToLook.getBigger();
+                nameToLook = bigger;
             }
             else
             {
@@ -684,37 +708,37 @@ public class PatternReader<T> where T : NodeValue<T>
             bool isThereAlready = false;
 
             int indexToPut = tempIndex + 1;
-            while (indexToPut < nodeList.Count)
+            while (indexToPut < NodeList.Count)
             {
-                if (nodeList[indexToPut].name == nameToLook)
+                if (NodeList[indexToPut].Value.Name == nameToLook)
                 {
                     isThereAlready = true;
                     break;
                 }
-                if (nodeList[indexToPut].name > nameToLook)
+                if (NodeList[indexToPut].Value.Name > nameToLook)
                     break;
 
                 indexToPut++;
             }
 
-            lesser_nodes.Add(nodeList[tempIndex]);
+            lesser_nodes.Add(NodeList[tempIndex].Value);
 
             if (isThereAlready)
             {
-                tempIndex = appendNode(indexToPut, lesser_nodes.Last);
+                tempIndex = appendNode(indexToPut, lesser_nodes.Last.Value);
             }
             else
             {
 
-                if (indexToPut < nodeList.Count)
+                if (indexToPut < NodeList.Count)
                 {
-                    nodeList.Insert(indexToPut, new Node(nameToLook, lesser_nodes));
+                    NodeList.Insert(indexToPut, new Node<T>(nameToLook, lesser_nodes));
                 }
                 else
                 {
-                    nodeList.Add(new Node(nameToLook, lesser_nodes));
+                    NodeList.Add(new Node<T>(nameToLook, lesser_nodes));
                 }
-                nodeList[indexToPut].appendValues(pattern.createEmpty(), patternLength);
+                NodeList[indexToPut].Value.appendValues(pattern.createEmpty(), PatternLength);
 
                 tempIndex = indexToPut;
             }
@@ -725,77 +749,65 @@ public class PatternReader<T> where T : NodeValue<T>
 
     public void calculateValues()
     {
-        for (int i = 1; i < nodeList.Count; i++)
+        for (int i = 1; i < NodeList.Count; i++)
         {
-            IndexableLinkedList<T> values = nodeList[i].getValues();
-            IndexableLinkedList<T> lesserValues = new IndexableLinkedList<T>();
-            int lesserLength = getLesserLength();
+            IndexableLinkedList<NodeValue<T>> values = NodeList[i].Value.Values;
+            IndexableLinkedList<NodeValue<T>> lesserValues = new IndexableLinkedList<NodeValue<T>>();
+            int lesserLength = NodeList[i].Value.getLesserLength();
             for (int j = 0; j < lesserLength; j++)
             {
-                lesserValues.Add(getLesserValue(j));
+                lesserValues.Add(NodeList[i].Value.getLesserValue(j));
             }
             for (int j = 0; j < values.Count; j++)
             {
-                values[j].deriveImplication(lesserValues, j);
+                NodeList[i].Value.Values[j].Value.calculateValue(lesserValues, j);
             }
         }
     }
 
-    public string ToString()
+
+    public PatternReader<T> copy(PatternReader<T> copied = null)
+    {
+
+        if (copied is null)
+        {
+            copied = new PatternReader<T>();
+
+            IndexableLinkedList<NodeValue<T>> values = NodeList[0].Value.Values;
+            for (int i = 0; i < values.Count; i++)
+            {
+                copied.interpretation(values[i].Value.copy());
+            }
+        }
+
+        for (int i = 0; i < copied.NodeList.Count; i++)
+        {
+            int i_adapted = i;
+            while (i_adapted < NodeList.Count && NodeList[i_adapted].Value.Name != copied.NodeList[i].Value.Name)
+            {
+                i_adapted++;
+            }
+
+            for (int j = 0; j < copied.NodeList[i].Value.Values.Count; j++)
+            {
+                NodeValue<T> value = NodeList[i_adapted].Value.Values[j].Value.copy();
+                copied.NodeList[i].Value.Values[j].Value = value;
+            }
+        }
+
+        return copied;
+    }
+
+    public override string ToString()
     {
 
         string str = "";
 
-        for (int i = 0; i < nodeList.Count; i++)
+        for (int i = 0; i < NodeList.Count; i++)
         {
-            str += nodeList[i].toString();
+            str += NodeList[i].Value.ToString() + "\n";
         }
 
         return str;
-    }
-
-    public int getPatternLength()
-    {
-        return patternLength;
-    }
-
-    public void setPatternLength(int patternLength)
-    {
-        this.patternLength = patternLength;
-    }
-
-    public IndexableLinkedList<PatternReader<T>.Node> getNodeList()
-    {
-        return nodeList;
-    }
-
-    public PatternReader<T> copy()
-    {
-        PatternReader<T> copy = new PatternReader<T>();
-
-        for (int i = 0; i < patternLength; i++)
-        {
-            copy.interpretation(default(T));
-        }
-
-        for (int i = 0; i < nodeList.Count; i++)
-        {
-            copy.nodeList[i].setName(nodeList[i].getName().copy());
-
-            IndexableLinkedList<T> values = nodeList[i].getValues();
-            IndexableLinkedList<T> copy_values = copy.nodeList[i].getValues();
-
-            for (int j = 0; j < values.Count; j++)
-            {
-                copy_values[j] = values[j].copy();
-            }
-        }
-
-        return copy;
-    }
-
-    public void setNodeList(IndexableLinkedList<Node> nodeList)
-    {
-        this.nodeList = nodeList;
     }
 }

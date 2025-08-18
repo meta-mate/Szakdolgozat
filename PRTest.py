@@ -33,15 +33,13 @@ class IntNodeValue(NodeValue):
     def predict(pattern_reader):
         result = None
 
-        if True:    
-            copied = pattern_reader.copy()
-            
-            last_change = copied.interpretation(IntNodeValue(0))
-            copied.calculate_values()
+        copied = pattern_reader.copy()
+        
+        last_change = copied.interpretation(IntNodeValue(0))
+        copied.calculate_values()
 
-            result = IntNodeValue(IntNodeValue.modulator - last_change.value)
+        result.value = (IntNodeValue.modulator - last_change.value) % IntNodeValue.modulator
 
-        gc.collect()
         return result
 
 
@@ -85,10 +83,10 @@ class IntNodeValue(NodeValue):
 if True:
     pattern_reader = PatternReader()
 
-    IntNodeValue.modulator = 12
+    IntNodeValue.modulator = 2
     pattern_reader.interpretation(IntNodeValue(0))
     pattern_reader.calculate_values()
-    for i in range(13):
+    for i in range(100):
         print(i + 2)
         #prediction = IntNodeValue.predict(pattern_reader)
         #next_step = prediction.value + 7

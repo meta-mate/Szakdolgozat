@@ -301,8 +301,12 @@ class GPTNodeValue(NodeValue):
         
         for j in range(len(input_dict)):
             if len(input_dict[j]) > 0:
-                if input_dict[j][-1] not in whitespace:
-                    input_dict[j] += " "
+                #if input_dict[j][-1] not in whitespace:
+                #    input_dict[j] += " "
+                if len(input_dict[j]) > 0:
+                    if input_dict[j][-1] == chr(160):
+                        input_dict[j][-1] = " "
+                input_dict[j] = input_dict[j].strip()
 
         return input_dict
 

@@ -3,7 +3,6 @@ from nltk.tokenize import sent_tokenize
 from datasets import load_dataset
 
 import PatternReader
-from PatternReader import NodeValue
 
 from GPTNodeValue import GPTNodeValue
 
@@ -14,24 +13,31 @@ import string
 import time
 import random
 
-nltk.download('punkt')
-nltk.download('punkt_tab')
-
+#nltk.download('punkt')
+#nltk.download('punkt_tab')
 
 pattern_reader = PatternReader.PatternReader()
 
-dataset = load_dataset("openwebtext", trust_remote_code=True)
-dataset.shuffle(seed=42)
-
 input_list = []
 sentences_all = []
-for i in range(128):
-    sentences = sent_tokenize(dataset["train"][i]["text"])
 
-    if len(sentences) >= 5:
-        sentences_all.append(sentences)
+if False:
+    dataset = load_dataset("openwebtext", trust_remote_code=True)
+    dataset.shuffle(seed=42)
 
-for i in range(5):
+    for i in range(32):
+        sentences = sent_tokenize(dataset["train"][i]["text"])
+
+        if len(sentences) >= 5:
+            sentences_all.append(sentences)
+else:
+    with open('txt/input.txt', 'r', encoding="utf-8") as file:
+        input_read = file.read()
+    sentences = sent_tokenize(input_read)
+    sentences_all.append(sentences)
+
+
+for i in range(3):
 
     sentences_at_i = []
 

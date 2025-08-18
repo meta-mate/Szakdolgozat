@@ -178,9 +178,7 @@ class Name():
             if copied_name is not None:
                 copied = copied_name.pattern_reader
 
-            result = Name(self.pattern_reader.copy(copied))
-
-            return result
+            return Name(self.pattern_reader.copy(copied))
 
         if copied_name is None:
             copied_name = Name(PatternReader())
@@ -208,13 +206,6 @@ class Name():
 
         if self.is_simple():
             if self.simple_value > 1:
-
-                #bigger = Name(PatternReader())
-
-                #for i in range(3):
-                #    bigger.pattern_reader.interpretation(NameValue(False))
-
-                #bigger[2].values.nodeat(0).value.value = True
 
                 self.has_bigger = True
                 
@@ -301,61 +292,8 @@ class Name():
                             self.has_bigger = True
                             self.bigger = bigger
                             return bigger
-                            break
 
                         j += 1
-
-                continue
-
-                for j in range(len(name[i].values)):
-                    value = name[i].values.nodeat(j).value.value
-                    lesser_value = name[i].get_lesser_value(j + 1).value
-                    if lesser_value:
-                        if not value:
-                            bigger_size = name[i].first_occurences.nodeat(j).value
-                            
-                            if i == 1:
-                                template = Name(PatternReader())
-                                for k in range(len(name[0].values) - 1):
-                                    template.increment()
-                                name.lesser_from_bigger = name.copy(template)
-                            else:
-                                name.lesser_from_bigger = name.copy()
-                                lesser_length = name[i].get_lesser_length()
-                                for k in range(j + 1, lesser_length):
-                                    condition = k + 1 >= lesser_length
-                                    if not condition:
-                                        condition = not name[i].get_lesser_value(k + 1).value
-                                    
-                                    if condition:
-                                        name.lesser_from_bigger[i].get_lesser_value(k).value = False
-                                        break
-                                
-                            break
-                    else:
-                        break
-
-            return None
-
-            for i in range(bigger_size):
-                bigger.increment()
-
-            bigger = self.copy(bigger)
-
-            for i in range(1, len(bigger)):
-                for j in range(len(bigger[i].values)):
-                    value = bigger[i].values.nodeat(j).value.value
-                    lesser_value = bigger[i].get_lesser_value(j + 1).value
-                    if lesser_value:
-                        if not value:
-                            bigger[i].values.nodeat(j).value.value = True
-                            self.has_bigger = True
-                            break
-                if self.has_bigger:
-                    break
-
-            self.bigger = bigger
-            return self.bigger
 
 
     def __gt__(self, other_name):
@@ -435,9 +373,6 @@ class PatternReader:
                 self.lesser_nodes = lesser_nodes
             else:
                 self.lesser_nodes = dllist()
-
-        def get_values(self):
-            return self.values
         
         def append_values(self, value, pattern_length):
             self.values.append(value)
@@ -446,18 +381,12 @@ class PatternReader:
         def get_lesser_value(self, index):
 
             if self.name == Name(1):
-                return self.lesser_nodes.nodeat(0).value.get_values().nodeat(index).value
+                return self.lesser_nodes.nodeat(0).value.values.nodeat(index).value
             else:
-                return self.lesser_nodes.nodeat(index).value.get_values().first.value
+                return self.lesser_nodes.nodeat(index).value.values.first.value
 
         def get_lesser_length(self):
             return len(self.values) + 1
-
-        def get_lesser_nodes(self):
-            return self.lesser_nodes
-
-        def set_lesser_nodes(self, lesser_nodes):
-            self.lesser_nodes = lesser_nodes
 
         def get_name(self):
             return self.name
@@ -465,7 +394,7 @@ class PatternReader:
 
         def __str__(self):
             values_str = ""
-            values = self.get_values()
+            values = self.values
             for i in range(len(values)):
                 values_str += str(values.nodeat(i).value)
                 if i < len(values) - 1:
@@ -484,12 +413,12 @@ class PatternReader:
             #lesser_values_str = lesser_values_str.replace("\n", "\n\t\t")
 
             if isinstance(self.values.nodeat(0).value, NameValue) or True:
-                return f"Node(Name: {self.get_name()} Values: {values_str})"
+                return f"Node(Name: {self.name} Values: {values_str})"
             
-            if self.get_name() == (Name(0)) or self.get_name() == (Name(1)) and False:
-                return f"Node(\n\n\tName: {self.get_name()}\n\n\tValues:\n\n\t\t{values_str}\n)"
+            if self.name == (Name(0)) or self.name == (Name(1)) and False:
+                return f"Node(\n\n\tName: {self.name}\n\n\tValues:\n\n\t\t{values_str}\n)"
             else: 
-                return f"Node(\n\n\tName: {self.get_name()}\n\n\tLesser values:\n\n\t\t{lesser_values_str}\n\n\tValues:\n\n\t\t{values_str}\n)"
+                return f"Node(\n\n\tName: {self.name}\n\n\tLesser values:\n\n\t\t{lesser_values_str}\n\n\tValues:\n\n\t\t{values_str}\n)"
 
     def __init__(self):
         self.node_list = dllist()
@@ -509,7 +438,7 @@ class PatternReader:
 
             if start_index < len(self.node_list):
                 
-                self.node_list.nodeat(start_index).value.get_lesser_nodes().append(lesser_node)
+                self.node_list.nodeat(start_index).value.lesser_nodes.append(lesser_node)
                 self.node_list.nodeat(start_index).value.append_values(pattern.create_empty(), self.pattern_length)
 
                 start_index += 1
@@ -523,7 +452,7 @@ class PatternReader:
             name_to_look = name_one
 
             for i in range(start_index, len(self.node_list)):
-                if self.node_list.nodeat(i).value.get_name() == name_to_look:
+                if self.node_list.nodeat(i).value.name == name_to_look:
                     temp_index = i + 1
 
                     self.node_list.nodeat(i).value.append_values(pattern.create_empty(), self.pattern_length)
@@ -545,7 +474,7 @@ class PatternReader:
             return temp_index
 
         temp_index = append_node(0)
-        self.node_list.nodeat(0).value.get_values().last.value = pattern
+        self.node_list.nodeat(0).value.values.last.value = pattern
 
         while True:
             
@@ -554,17 +483,17 @@ class PatternReader:
             is_there_same_below = False
             
             lesser_nodes = dllist()
-            name_to_look = self.node_list.nodeat(temp_index).value.get_name()
+            name_to_look = self.node_list.nodeat(temp_index).value.name
             
             for i_n in range(temp_index):
                 i = temp_index - 1 - i_n
 
-                if self.node_list.nodeat(i).value.get_name() == name_to_look:
+                if self.node_list.nodeat(i).value.name == name_to_look:
                     is_there_same_below = True
                     lesser_nodes.appendleft(self.node_list.nodeat(i).value)
                     break
                     #enough just once, can break here, save only the previous value
-                if self.node_list.nodeat(i).value.get_name() > name_to_look:
+                if self.node_list.nodeat(i).value.name > name_to_look:
                     break
                 
 
@@ -573,7 +502,7 @@ class PatternReader:
                     break
 
             
-                #name_to_look = self.node_list.nodeat(temp_index).value.get_name()
+                #name_to_look = self.node_list.nodeat(temp_index).value.name
                 lesser = name_to_look.get_lesser_from_bigger()
                 bigger = name_to_look.get_bigger()
 
@@ -584,19 +513,19 @@ class PatternReader:
                 for i_n in range(temp_index):
                     i = temp_index - 1 - i_n
 
-                    if self.node_list.nodeat(i).value.get_name() == bigger:
+                    if self.node_list.nodeat(i).value.name == bigger:
                         break
-                    if self.node_list.nodeat(i).value.get_name() > bigger:
-                        break
-
-                    if self.node_list.nodeat(i).value.get_name() == name_to_look:
-                        is_lesser_from_bigger_there = False
-                        break
-                    if self.node_list.nodeat(i).value.get_name() > name_to_look:
-                        is_lesser_from_bigger_there = False
+                    if self.node_list.nodeat(i).value.name > bigger:
                         break
 
-                    if self.node_list.nodeat(i).value.get_name() == lesser:
+                    if self.node_list.nodeat(i).value.name == name_to_look:
+                        is_lesser_from_bigger_there = False
+                        break
+                    if self.node_list.nodeat(i).value.name > name_to_look:
+                        is_lesser_from_bigger_there = False
+                        break
+
+                    if self.node_list.nodeat(i).value.name == lesser:
                         is_lesser_from_bigger_there = True
                         lesser_index = i
 
@@ -614,10 +543,10 @@ class PatternReader:
             index_to_put = temp_index + 1
             while index_to_put < len(self.node_list):
                 
-                if self.node_list.nodeat(index_to_put).value.get_name() == name_to_look:
+                if self.node_list.nodeat(index_to_put).value.name == name_to_look:
                     is_there_already = True
                     break
-                if self.node_list.nodeat(index_to_put).value.get_name() > name_to_look:
+                if self.node_list.nodeat(index_to_put).value.name > name_to_look:
                     break
 
                 index_to_put += 1
@@ -635,9 +564,7 @@ class PatternReader:
 
                 temp_index = index_to_put
         
-        
-        #if self.pattern_length == 13:
-        #    print("here ", name_to_look, last_change)
+
         return last_change
 
 
@@ -650,7 +577,7 @@ class PatternReader:
             for j in range(lesser_length):
                 lesser_values.append(self.node_list.nodeat(i).value.get_lesser_value(j))
 
-            values = self.node_list.nodeat(i).value.get_values()
+            values = self.node_list.nodeat(i).value.values
             for j, value in enumerate(values):
                 value.calculate_value(lesser_values, j)
     
@@ -662,7 +589,7 @@ class PatternReader:
         if copied is None:
             copied = PatternReader()
             
-            values = node_list.nodeat(0).value.get_values()
+            values = node_list.nodeat(0).value.values
             for i in range(len(values)):
                 copied.interpretation(values.nodeat(i).value.copy())
 
@@ -670,7 +597,7 @@ class PatternReader:
         for i in range(len(copied.node_list)):
 
             i_adapted = i
-            while i_adapted < len(node_list) and not node_list.nodeat(i_adapted).value.get_name() == copied.node_list.nodeat(i).value.get_name():
+            while i_adapted < len(node_list) and not node_list.nodeat(i_adapted).value.name == copied.node_list.nodeat(i).value.name:
                 i_adapted += 1
 
             for j in range(len(copied.node_list.nodeat(i).value.values)):

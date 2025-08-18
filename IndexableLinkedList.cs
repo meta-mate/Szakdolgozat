@@ -10,7 +10,10 @@ public class IndexableLinkedList<T>
 
     public int Count => _list.Count;
 
-    public T this[int index] => GetNodeAt(index).Value;
+    public LinkedListNode<T> this[int index] => GetNodeAt(index);
+
+    public LinkedListNode<T> First => _list.First;
+    public LinkedListNode<T> Last => _list.Last;
 
     private LinkedListNode<T> GetNodeAt(int index)
     {
