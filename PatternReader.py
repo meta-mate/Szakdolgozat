@@ -1,8 +1,21 @@
 from llist import dllist, dllistnode
 
 class NodeValue:
+
+    def __init__(self, value, is_empty = False):
+        self.value = value
+        self.is_empty = is_empty
+
     def calculate_value(self, lesser_nodes, n):
         raise NotImplementedError("Subclasses should implement this!")
+    
+    def calculate_if_needed(self, lesser_nodes, n):
+        if self.is_empty:
+            self.is_empty = False
+            self.calculate_value(lesser_nodes, n)
+            return True
+        else:
+            return False
 
     def create_empty(self):
         raise NotImplementedError("Subclasses should implement this!")
@@ -17,7 +30,7 @@ class NodeValue:
 class NameValue(NodeValue):
 
     def __init__(self, value):
-        self.value = value
+        super().__init__(value)
 
     def calculate_value(self, lesser_nodes, n):
         return
@@ -49,9 +62,9 @@ class Name():
         else:
             TypeError("Argument must be the correct type")
 
-        self.has_bigger = False
-        self.lesser_from_bigger = None
-        self.bigger = None
+        self.has_greater = False
+        self.lesser_from_greater = None
+        self.greater = None
         self.incremented = None
 
 
@@ -131,20 +144,20 @@ class Name():
             self.incremented.increment()
         return self.incremented
     
-    def get_has_bigger(self):
-        if self.bigger is None:
-            self.calculate_bigger()
-        return self.has_bigger
+    def get_has_greater(self):
+        if self.greater is None:
+            self.calculate_greater()
+        return self.has_greater
 
-    def get_bigger(self):
-        if self.bigger is None:
-            self.calculate_bigger()
-        return self.bigger
+    def get_greater(self):
+        if self.greater is None:
+            self.calculate_greater()
+        return self.greater
     
-    def get_lesser_from_bigger(self):
-        if self.lesser_from_bigger is None:
-            self.calculate_bigger()
-        return self.lesser_from_bigger
+    def get_lesser_from_greater(self):
+        if self.lesser_from_greater is None:
+            self.calculate_greater()
+        return self.lesser_from_greater
 
     def __eq__(self, other_name):
             
@@ -200,41 +213,41 @@ class Name():
         return copied_name
 
 
-    def calculate_bigger(self):
+    def calculate_greater(self):
         
-        self.has_bigger = False
+        self.has_greater = False
 
         if self.is_simple():
             if self.simple_value > 1:
 
-                self.has_bigger = True
+                self.has_greater = True
                 
-                bigger = Name(-1)
+                greater = Name(-1)
 
-                lesser_from_bigger = Name(self.simple_value - 1)
+                lesser_from_greater = Name(self.simple_value - 1)
 
-                self.bigger = bigger
-                self.lesser_from_bigger = lesser_from_bigger
-                return self.bigger
+                self.greater = greater
+                self.lesser_from_greater = lesser_from_greater
+                return self.greater
             else:
                 return None
         else:
 
             
-            #bigger = Name(PatternReader())
-            bigger = self.copy()
+            #greater = Name(PatternReader())
+            greater = self.copy()
 
-            bigger_size = 0
-            for i in range(2, len(bigger)):
+            greater_size = 0
+            for i in range(2, len(greater)):
                 
                 #Just look at the first 2 lesser values, if both is True, add a new True to the values, and take 1 from the lessers
 
-                first_lesser = bigger[i].get_lesser_value(0).value
-                second_lesser = bigger[i].get_lesser_value(1).value
+                first_lesser = greater[i].get_lesser_value(0).value
+                second_lesser = greater[i].get_lesser_value(1).value
 
                 if first_lesser and second_lesser:
                     
-                    node = bigger[i]
+                    node = greater[i]
                     lesser_length = node.get_lesser_length()
 
                     for j in range(1, lesser_length):
@@ -244,54 +257,54 @@ class Name():
 
                             min_size = 0
 
-                            for k in range(i + 1, len(bigger)):
-                                for l in range(len(bigger[k].values)):
-                                    if bigger[k].values.nodeat(l).value.value:
-                                        min_size = bigger[k].first_occurences.nodeat(l).value
+                            for k in range(i + 1, len(greater)):
+                                for l in range(len(greater[k].values)):
+                                    if greater[k].values.nodeat(l).value.value:
+                                        min_size = greater[k].first_occurences.nodeat(l).value
                                     else:
                                         break
 
-                            lesser_from_bigger_size = node.lesser_nodes.nodeat(j - 1).value.first_occurences.first.value
-                            if lesser_from_bigger_size > min_size:
-                                min_size = lesser_from_bigger_size
+                            lesser_from_greater_size = node.lesser_nodes.nodeat(j - 1).value.first_occurences.first.value
+                            if lesser_from_greater_size > min_size:
+                                min_size = lesser_from_greater_size
 
-                            if bigger.pattern_reader.pattern_length > min_size:
+                            if greater.pattern_reader.pattern_length > min_size:
                                 template = Name(PatternReader())
                                 for k in range(min_size):
                                     template.pattern_reader.interpretation(NameValue(False))
                         
-                            self.lesser_from_bigger = self.copy(template)
-                            self.lesser_from_bigger.simplify()
+                            self.lesser_from_greater = self.copy(template)
+                            self.lesser_from_greater.simplify()
                             break
                     
                     j = 0
                     while True:
                         
                         while j >= len(node.values):
-                            bigger.pattern_reader.interpretation(NameValue(False))
+                            greater.pattern_reader.interpretation(NameValue(False))
 
                         if not node.values.nodeat(j).value.value:
                             node.values.nodeat(j).value.value = True
-                            bigger_size = node.first_occurences.nodeat(j).value
+                            greater_size = node.first_occurences.nodeat(j).value
                             
                             k = 0
-                            while bigger[k] != node:
+                            while greater[k] != node:
                                 
-                                for l in range(len(bigger[k].values)):
-                                    bigger[k].values.nodeat(l).value.value = False
+                                for l in range(len(greater[k].values)):
+                                    greater[k].values.nodeat(l).value.value = False
 
                                 k += 1
 
-                            if bigger_size != bigger.pattern_reader.pattern_length:
+                            if greater_size != greater.pattern_reader.pattern_length:
                                 template = Name()
-                                for k in range(bigger_size):
+                                for k in range(greater_size):
                                     template.pattern_reader.interpretation(NameValue(False))
-                                bigger = bigger.copy(template)
+                                greater = greater.copy(template)
                                 
                             
-                            self.has_bigger = True
-                            self.bigger = bigger
-                            return bigger
+                            self.has_greater = True
+                            self.greater = greater
+                            return greater
 
                         j += 1
 
@@ -319,7 +332,7 @@ class Name():
             longer_name = other_name
             shorter_name = self
             
-        is_shorter_bigger = 0
+        is_shorter_greater = 0
 
         for i in range(len(shorter_name)):
             i_adapted = i
@@ -337,16 +350,16 @@ class Name():
                     shorter_value = shorter_values.nodeat(j).value.value
 
                 if shorter_value and not longer_value:
-                    is_shorter_bigger = 1
+                    is_shorter_greater = 1
                     break
                 elif not shorter_value and longer_value:
-                    is_shorter_bigger = -1
+                    is_shorter_greater = -1
                     break
 
         if is_shorter:
-            return is_shorter_bigger > 0
+            return is_shorter_greater > 0
         else:
-            return is_shorter_bigger < 0
+            return is_shorter_greater < 0
 
     def __len__(self):
         if self.is_simple():
@@ -498,43 +511,43 @@ class PatternReader:
                 
 
             if not is_there_same_below:
-                if not name_to_look.get_has_bigger():
+                if not name_to_look.get_has_greater():
                     break
 
             
                 #name_to_look = self.node_list.nodeat(temp_index).value.name
-                lesser = name_to_look.get_lesser_from_bigger()
-                bigger = name_to_look.get_bigger()
+                lesser = name_to_look.get_lesser_from_greater()
+                greater = name_to_look.get_greater()
 
-                is_lesser_from_bigger_there = False
+                is_lesser_from_greater_there = False
                 lesser_index = temp_index
                 lesser_nodes.clear()
 
                 for i_n in range(temp_index):
                     i = temp_index - 1 - i_n
 
-                    if self.node_list.nodeat(i).value.name == bigger:
+                    if self.node_list.nodeat(i).value.name == greater:
                         break
-                    if self.node_list.nodeat(i).value.name > bigger:
+                    if self.node_list.nodeat(i).value.name > greater:
                         break
 
                     if self.node_list.nodeat(i).value.name == name_to_look:
-                        is_lesser_from_bigger_there = False
+                        is_lesser_from_greater_there = False
                         break
                     if self.node_list.nodeat(i).value.name > name_to_look:
-                        is_lesser_from_bigger_there = False
+                        is_lesser_from_greater_there = False
                         break
 
                     if self.node_list.nodeat(i).value.name == lesser:
-                        is_lesser_from_bigger_there = True
+                        is_lesser_from_greater_there = True
                         lesser_index = i
 
-                if not is_lesser_from_bigger_there:
+                if not is_lesser_from_greater_there:
                     break
 
                 lesser_nodes.appendleft(self.node_list.nodeat(lesser_index).value)
 
-                name_to_look = bigger
+                name_to_look = greater
             else:
                 name_to_look = name_to_look.get_incremented()
 
@@ -578,8 +591,10 @@ class PatternReader:
                 lesser_values.append(self.node_list.nodeat(i).value.get_lesser_value(j))
 
             values = self.node_list.nodeat(i).value.values
-            for j, value in enumerate(values):
-                value.calculate_value(lesser_values, j)
+            for j in range(len(values) - 1, -1, -1):
+                value = values.nodeat(j).value
+                if not value.calculate_if_needed(lesser_values, j):
+                    break
     
                 
     def copy(self, copied = None):

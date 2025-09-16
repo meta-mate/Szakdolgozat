@@ -5,11 +5,29 @@ public abstract class NodeValue<T1>
 {
 
     public T1 Value { get; set; }
-    public NodeValue(T1 value)
+    public bool IsEmpty { get; set; }
+
+    public NodeValue(T1 value, bool isEmpty = false)
     {
         Value = value;
+        IsEmpty = isEmpty;
     }
     public abstract NodeValue<T1> calculateValue(IndexableLinkedList<NodeValue<T1>> lesserNodes, int index);
+
+    public bool calculateIfNeeded(IndexableLinkedList<NodeValue<T1>> lesserNodes, int index)
+    {
+        if (IsEmpty)
+        {
+            IsEmpty = false;
+            calculateValue(lesserNodes, index);
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
     public abstract NodeValue<T1> createEmpty();
     public abstract NodeValue<T1> copy();
     public override string ToString()
@@ -25,7 +43,7 @@ public class NameValue : NodeValue<bool>
 
     public override NodeValue<bool> calculateValue(IndexableLinkedList<NodeValue<bool>> lesserNodes, int index)
     {
-        return createEmpty();
+        return this;
     }
 
     public override NodeValue<bool> createEmpty()
@@ -47,21 +65,21 @@ public class Name
     public int SimpleValue { get; set; }
     public PatternReader<bool> PatternReader { get; set; }
     public Name Incremented { get; set; }
-    public Name Bigger { get; set; }
-    public Name LesserFromBigger { get; set; }
-    public bool HasBigger { get; set; }
+    public Name Greater { get; set; }
+    public Name LesserFromGreater { get; set; }
+    public bool HasGreater { get; set; }
 
-    private bool isBiggerCalculated = false;
+    private bool isGreaterCalculated = false;
 
     public Name(int simpleValue)
     {
         SimpleValue = simpleValue;
         PatternReader = null;
 
-        isBiggerCalculated = false;
-        Bigger = null;
-        LesserFromBigger = null;
-        HasBigger = false;
+        isGreaterCalculated = false;
+        Greater = null;
+        LesserFromGreater = null;
+        HasGreater = false;
     }
 
     public Name(PatternReader<bool> patternReader)
@@ -217,23 +235,23 @@ public class Name
         }
     }
 
-    public Name calculateBigger()
+    public Name calculateGreater()
     {
-        isBiggerCalculated = true;
+        isGreaterCalculated = true;
 
-        HasBigger = false;
+        HasGreater = false;
 
         if (isSimple())
         {
             if (SimpleValue > 1)
             {
-                HasBigger = true;
+                HasGreater = true;
 
-                Bigger = new Name(-1);
+                Greater = new Name(-1);
 
-                LesserFromBigger = new Name(SimpleValue - 1);
+                LesserFromGreater = new Name(SimpleValue - 1);
 
-                return Bigger;
+                return Greater;
             }
             else
             {
@@ -242,44 +260,44 @@ public class Name
         }
         else
         {
-            Bigger = copy();
+            Greater = copy();
 
-            int biggerSize = 0;
-            for (int i = 2; i < Bigger.Count; i++)
+            int greaterSize = 0;
+            for (int i = 2; i < Greater.Count; i++)
             {
                 int j = 0;
 
-                bool first_lesser = Bigger[i].getLesserValue(0).Value;
-                bool second_lesser = Bigger[i].getLesserValue(1).Value;
+                bool first_lesser = Greater[i].getLesserValue(0).Value;
+                bool second_lesser = Greater[i].getLesserValue(1).Value;
 
                 if (first_lesser && second_lesser)
                 {
-                    int lesser_length = Bigger[i].getLesserLength();
+                    int lesser_length = Greater[i].getLesserLength();
 
                     for (j = 1; j < lesser_length; j++)
                     {
-                        if (!Bigger[i].getLesserValue(j).Value || j == lesser_length - 1)
+                        if (!Greater[i].getLesserValue(j).Value || j == lesser_length - 1)
                         {
                             Name template = null;
 
                             int minSize = 0;
 
-                            for (int k = i + 1; k < Bigger.Count; k++)
+                            for (int k = i + 1; k < Greater.Count; k++)
                             {
-                                for (int l = 0; l < Bigger[k].Values.Count; l++)
+                                for (int l = 0; l < Greater[k].Values.Count; l++)
                                 {
-                                    if (Bigger[k].Values[l].Value.Value)
+                                    if (Greater[k].Values[l].Value.Value)
                                     {
-                                        minSize = Bigger[k].FirstOccurences[l].Value;
+                                        minSize = Greater[k].FirstOccurences[l].Value;
                                     }
                                     else break;
                                 }
                             }
 
-                            int lesserFromBiggerSize = Bigger[i].LesserNodes[j - 1].Value.FirstOccurences[0].Value;
-                            if (lesserFromBiggerSize > minSize) minSize = lesserFromBiggerSize;
+                            int lesserFromGreaterSize = Greater[i].LesserNodes[j - 1].Value.FirstOccurences[0].Value;
+                            if (lesserFromGreaterSize > minSize) minSize = lesserFromGreaterSize;
 
-                            if (Bigger.PatternReader.PatternLength > minSize)
+                            if (Greater.PatternReader.PatternLength > minSize)
                             {
                                 template = new Name(new PatternReader<bool>());
                                 for (int k = 0; k < minSize; k++)
@@ -288,8 +306,8 @@ public class Name
                                 }
                             }
 
-                            LesserFromBigger = copy(template);
-                            LesserFromBigger.simplify();
+                            LesserFromGreater = copy(template);
+                            LesserFromGreater.simplify();
                             break;
                         }
                     }
@@ -298,41 +316,41 @@ public class Name
                     j = 0;
                     while (true)
                     {
-                        while (j >= Bigger[i].Values.Count)
+                        while (j >= Greater[i].Values.Count)
                         {
-                            Bigger.PatternReader.interpretation(new NameValue(false));
+                            Greater.PatternReader.interpretation(new NameValue(false));
                         }
 
-                        if (!Bigger[i].Values[j].Value.Value)
+                        if (!Greater[i].Values[j].Value.Value)
                         {
-                            Bigger[i].Values[j].Value.Value = true;
-                            biggerSize = Bigger[i].FirstOccurences[j].Value;
+                            Greater[i].Values[j].Value.Value = true;
+                            greaterSize = Greater[i].FirstOccurences[j].Value;
 
                             int k = 0;
-                            while (Bigger[k] != Bigger[i])
+                            while (Greater[k] != Greater[i])
                             {
-                                for (int l = 0; l < Bigger[k].Values.Count; l++)
+                                for (int l = 0; l < Greater[k].Values.Count; l++)
                                 {
-                                    Bigger[k].Values[l].Value.Value = false;
+                                    Greater[k].Values[l].Value.Value = false;
                                 }
 
                                 k++;
                             }
 
-                            if (biggerSize != Bigger.PatternReader.PatternLength)
+                            if (greaterSize != Greater.PatternReader.PatternLength)
                             {
                                 Name template = new Name(new PatternReader<bool>());
-                                for (k = 0; k < biggerSize; k++)
+                                for (k = 0; k < greaterSize; k++)
                                 {
                                     template.PatternReader.interpretation(new NameValue(false));
                                 }
-                                Bigger = Bigger.copy(template);
+                                Greater = Greater.copy(template);
                             }
 
-                            HasBigger = true;
+                            HasGreater = true;
 
 
-                            return Bigger;
+                            return Greater;
                         }
 
                         j++;
@@ -378,7 +396,7 @@ public class Name
             shortherName = name;
         }
 
-        int isShorterBigger = 0;
+        int isShorterGreater = 0;
 
         for (int i = 0; i < shortherName.Count; i++)
         {
@@ -400,12 +418,12 @@ public class Name
 
                 if (shorterValue && !longerValue)
                 {
-                    isShorterBigger = 1;
+                    isShorterGreater = 1;
                     break;
                 }
                 else if (!shorterValue && longerValue)
                 {
-                    isShorterBigger = -1;
+                    isShorterGreater = -1;
                     break;
                 }
             }
@@ -413,11 +431,11 @@ public class Name
 
         if (isShorter)
         {
-            return isShorterBigger > 0;
+            return isShorterGreater > 0;
         }
         else
         {
-            return isShorterBigger > 0;
+            return isShorterGreater > 0;
         }
     }
 
@@ -437,25 +455,25 @@ public class Name
         return Incremented;
     }
 
-    public bool getHasBigger()
+    public bool getHasGreater()
     {
-        if (!isBiggerCalculated)
+        if (!isGreaterCalculated)
         {
-            calculateBigger();
+            calculateGreater();
         }
-        return HasBigger;
+        return HasGreater;
     }
 
-    public Name getBigger()
+    public Name getGreater()
     {
-        if (!isBiggerCalculated) calculateBigger();
-        return Bigger;
+        if (!isGreaterCalculated) calculateGreater();
+        return Greater;
     }
 
-    public Name getLesserFromBigger()
+    public Name getLesserFromGreater()
     {
-        if (!isBiggerCalculated) calculateBigger();
-        return LesserFromBigger;
+        if (!isGreaterCalculated) calculateGreater();
+        return LesserFromGreater;
     }
 
     public int Count
@@ -656,49 +674,49 @@ public class PatternReader<T>
 
             if (!isThereSameBelow)
             {
-                if (!nameToLook.getHasBigger())
+                if (!nameToLook.getHasGreater())
                     break;
 
                 //nameToLook = NodeList[tempIndex].Name;
-                Name lesser = nameToLook.getLesserFromBigger();
-                Name bigger = nameToLook.getBigger();
+                Name lesser = nameToLook.getLesserFromGreater();
+                Name greater = nameToLook.getGreater();
 
 
-                bool isLesserFromBiggerThere = false;
+                bool isLesserFromGreaterThere = false;
                 int lesserIndex = tempIndex;
                 lesser_nodes.Clear();
 
                 for (int i = lesserIndex - 1; i >= 0; i--)
                 {
-                    if (NodeList[i].Value.Name == bigger)
+                    if (NodeList[i].Value.Name == greater)
                         break;
-                    if (NodeList[i].Value.Name > bigger)
+                    if (NodeList[i].Value.Name > greater)
                         break;
 
                     if (NodeList[i].Value.Name == nameToLook)
                     {
-                        isLesserFromBiggerThere = false;
+                        isLesserFromGreaterThere = false;
                         break;
                     }
                     if (NodeList[i].Value.Name > nameToLook)
                     {
-                        isLesserFromBiggerThere = false;
+                        isLesserFromGreaterThere = false;
                         break;
                     }
 
                     if (NodeList[i].Value.Name == lesser)
                     {
-                        isLesserFromBiggerThere = true;
+                        isLesserFromGreaterThere = true;
                         lesserIndex = i;
                     }
                 }
 
-                if (!isLesserFromBiggerThere)
+                if (!isLesserFromGreaterThere)
                     break;
 
                 lesser_nodes.AddFirst(NodeList[lesserIndex].Value);
 
-                nameToLook = bigger;
+                nameToLook = greater;
             }
             else
             {
@@ -758,9 +776,10 @@ public class PatternReader<T>
             {
                 lesserValues.Add(NodeList[i].Value.getLesserValue(j));
             }
-            for (int j = 0; j < values.Count; j++)
+            for (int j = values.Count - 1; j >= 0; j--)
             {
-                NodeList[i].Value.Values[j].Value.calculateValue(lesserValues, j);
+                NodeValue<T> value = values[j].Value;
+                if (!value.calculateIfNeeded(lesserValues, j)) break;
             }
         }
     }

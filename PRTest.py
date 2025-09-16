@@ -13,8 +13,17 @@ class IntNodeValue(NodeValue):
     
     modulator = 2
 
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, value, is_empty = False):
+        super().__init__(value, is_empty)
+
+    def create_empty(self):
+        return IntNodeValue(0, True)
+    
+    def copy(self):
+        return IntNodeValue(self.value)
+
+    def __str__(self):
+        return str(self.value)
 
     def calculate_value(self, lesser_values, n):
         
@@ -58,7 +67,7 @@ class IntNodeValue(NodeValue):
             if not started:
                 if last_change is node.values.first.value:
                     started = True
-                    last_value.value = step.value
+                    last_value.value = step.value % IntNodeValue.modulator
                 else:
                     continue
 
@@ -68,25 +77,16 @@ class IntNodeValue(NodeValue):
             node.get_lesser_value(-1).value = new_value
 
         return last_change
-            
-
-    def create_empty(self):
-        return IntNodeValue(0)
-    
-    def copy(self):
-        return IntNodeValue(self.value)
-
-    def __str__(self):
-        return str(self.value)
 
 
 if True:
     pattern_reader = PatternReader()
 
     IntNodeValue.modulator = 2
+    length = 13
     pattern_reader.interpretation(IntNodeValue(0))
     pattern_reader.calculate_values()
-    for i in range(100):
+    for i in range(length - 1):
         print(i + 2)
         #prediction = IntNodeValue.predict(pattern_reader)
         #next_step = prediction.value + 7
