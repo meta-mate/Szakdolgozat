@@ -79,7 +79,7 @@ class IntNodeValue(NodeValue):
         return last_change
 
 
-if True:
+if False:
     pattern_reader = PatternReader()
 
     IntNodeValue.modulator = 2
@@ -137,7 +137,7 @@ else:
 
     sum = 0
     for node in pattern_reader.node_list:
-        sum += len(node.get_values())
+        sum += len(node.values)
 
     print(sum)
 

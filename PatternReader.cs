@@ -779,7 +779,8 @@ public class PatternReader<T>
             for (int j = values.Count - 1; j >= 0; j--)
             {
                 NodeValue<T> value = values[j].Value;
-                if (!value.calculateIfNeeded(lesserValues, j)) break;
+                if (!value.calculateIfNeeded(lesserValues, j))
+                    break;
             }
         }
     }

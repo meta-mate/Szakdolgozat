@@ -8,3 +8,6 @@ gpt2-finetuned
 
 /json/*
 /img/*
+
+AbstractHRM/ARC
+AbstractHRM/ARC-AGI-2

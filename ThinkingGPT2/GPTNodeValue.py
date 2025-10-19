@@ -59,7 +59,7 @@ class GPTNodeValue(NodeValue):
     loss_trackers = []
     
     def __init__(self, value = []):
-        self.value = value
+        super().__init__(value)
 
     def is_acceptable(result, i):
 
@@ -375,4 +375,7 @@ class GPTNodeValue(NodeValue):
         return GPTNodeValue([])
 
     def __str__(self):
+        if len(self.value) == 0:
+            return ""
+        
         return str(self.value[0])
