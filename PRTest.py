@@ -79,11 +79,11 @@ class IntNodeValue(NodeValue):
         return last_change
 
 
-if False:
+if True:
     pattern_reader = PatternReader()
 
     IntNodeValue.modulator = 2
-    length = 13
+    length = 5
     pattern_reader.interpretation(IntNodeValue(0))
     pattern_reader.calculate_values()
     for i in range(length - 1):
@@ -102,6 +102,12 @@ if False:
 
         #if last_change.value != 7:
         #    print("error its ", last_change.value, "at", pattern_reader.pattern_length)
+
+    sum = 0
+    for node in pattern_reader.node_list:
+        sum += len(node.values)
+
+    print(sum)
 
     print(pattern_reader.node_list.nodeat(0).value.values)
 

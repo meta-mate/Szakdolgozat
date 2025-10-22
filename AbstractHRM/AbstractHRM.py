@@ -3,6 +3,7 @@ import torch.nn as nn
 import sys
 sys.path.append("../Szakdolgozat")
 from PatternReader import PatternReader, NodeValue
+import gc
 
 class HRMNodeValue(NodeValue):
 
@@ -10,10 +11,7 @@ class HRMNodeValue(NodeValue):
         super().__init__(value, is_empty)
 
     def calculate_value(self, lesser_nodes, n):
-        #x_lesser = lesser_nodes.nodeat(n).value.value
-        #self.value = block(x_lesser, self.x_greater)
         raise NotImplementedError("Use step() method instead!")
-        return self.value
     
     def create_empty(self):
         return HRMNodeValue(None)
@@ -22,7 +20,7 @@ class HRMNodeValue(NodeValue):
         return None
     
     def __str__(self):
-        return ""
+        return str(self.value.shape)
     
     def step(pattern_reader, block, x):
         
@@ -63,8 +61,11 @@ class HRMNodeValue(NodeValue):
             
             lesser_value = lesser_node.values.last.value
             
-            with torch.no_grad():
-                lesser_value.value = block(x_lesser, x_greater)
+            if i == 2:
+                lesser_value.value = block(x_lesser.detach(), x_greater)
+            else:    
+                with torch.no_grad():
+                    lesser_value.value = block(x_lesser, x_greater)
             
         index = min(1, len(node_list) - 1)
 
@@ -78,8 +79,16 @@ class AbstractHRM(nn.Module):
         self.pattern_reader = PatternReader()
         self.block = block
 
+    def reset(self):
+        del self.pattern_reader
+        self.pattern_reader = PatternReader()
+        gc.collect()
+        torch.cuda.empty_cache()
+
     def forward(self, x):
         
+        return HRMNodeValue.step(self.pattern_reader, self.block, x)
+
         '''
         The stopping logic should take into account:
          - the loss, or the non-ambiguity of the output, and its convergence
@@ -87,8 +96,9 @@ class AbstractHRM(nn.Module):
          - the number of new name types, that indicate unique vantage points
         '''
         y = None
-        for i in range(3):
+        for i in range(5):
             y = HRMNodeValue.step(self.pattern_reader, self.block, x)
         
+        self.reset()
         return y
 

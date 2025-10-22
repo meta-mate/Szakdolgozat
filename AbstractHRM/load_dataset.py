@@ -24,7 +24,7 @@ class LoadDataset:
 
 
     def recolor_grid(grid, color_map = np.random.permutation(range(10))):
-        result = grid.deepcopy()
+        result = grid.copy()
 
         for i in range(10):
             result[result == i] += color_map[i] - i
@@ -49,7 +49,10 @@ class LoadDataset:
 
             for example_type in result:
                 result[example_type].append([])
-                for i in range(4):
+                length = 4
+                #if example_type == "test":
+                #    length = 1
+                for i in range(length):
                     if i < len(task[example_type]):
                         example_io = task[example_type][i]
                         for grid in example_io.values():
@@ -86,11 +89,11 @@ class LoadDataset:
             result_id += "_" + str(rotate_amount) + "_" + str(flip_axis)
 
             augmentations[result_id] = {}
+            augmentations[result_id]["train"] = []
+            augmentations[result_id]["test"] = []
 
-            for example_type in tasks[task_id]:
+            for example_type in augmentations[result_id]:
                 #dictionary of "train" or "test"
-
-                augmentations[result_id][example_type] = []
                 
                 for example_io in tasks[task_id][example_type]:
                     #array of "input" - "output" dictionaries

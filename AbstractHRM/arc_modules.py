@@ -66,7 +66,7 @@ class GridEmbed(nn.Module):
         shape = grid.shape
         H, W = shape[-2:]
         shape += (self.d_model,)
-        grid = grid.view(-1)
+        grid = grid.reshape(-1)
         color = self.color_emb(grid).view(shape)
         rows  = self.row_emb(torch.arange(H, device=device).unsqueeze(1).expand(H, W))
         cols  = self.col_emb(torch.arange(W, device=device).unsqueeze(0).expand(H, W))
@@ -81,9 +81,9 @@ class GridDecode(nn.Module):
         self.head = nn.Linear(d_model, num_colors + 1)
 
     def forward(self, seq):
-        H, W, d_model = seq.shape[-3:]        
+        B, H, W, d_model = seq.shape[-4:]        
         logits = self.head(seq)          # [N, num_colors]
-        return logits.view(H, W, -1)     # [H, W, num_colors]
+        return logits.view(B, H, W, -1)     # [H, W, num_colors]
 
 
 class RoleShift(nn.Module):
@@ -94,14 +94,14 @@ class RoleShift(nn.Module):
         self.net = nn.Sequential(
             nn.LayerNorm(d_model),
             nn.Linear(d_model, d_model * 2),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(d_model * 2, d_model)
         )
     
     def forward(self, x):
         shape = x.shape
         x = x.reshape(-1, self.d_model)
-        y = self.net(x.view(-1, self.d_model))
+        y = self.net(x)
         return y.view(shape)
     
 
@@ -123,23 +123,44 @@ class GridCombiner(nn.Module):
 
     def forward(self, example_grids, test_input_grid):
         
-        test_input_grid = test_input_grid[:, 0]
-        B, H, W, D = test_input_grid.shape
-        #N = 4 #len(example_grids[0])
+        B, N, H, W, D = example_grids.shape
 
+        '''
         # Shift the example grids
         for i in range(4):
             example_grids[:, 2*i:] = self.example_shift(example_grids[:, 2*i:])
         example_grids[:, 1::2] = self.output_shift(example_grids[:, 1::2])
+        '''
 
-        # Flatten all examples into one sequence
-        context = example_grids.view(B, 8 * H * W, D)
+        context = example_grids.view(B, N * H * W, D)
         query = test_input_grid.view(B, H * W, D)
 
-        # Test input attends to all example cells
         attended, _ = self.attn(query, context, context)
-        x = self.norm1(query + self.dropout(attended))
-        x = self.norm2(x + self.dropout(self.ff(x)))
+        x1 = self.norm1(query + self.dropout(attended))
+        x = self.norm2(x1 + self.dropout(self.ff(x1)))
 
-        # Reshape back to grid
         return x.view(B, H, W, D)
+
+
+class ACTModule(nn.Module):
+    def __init__(self, d_model, n_heads=4):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.norm = nn.LayerNorm(d_model)
+        
+        self.fc = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.GELU(),
+            nn.Linear(d_model // 2, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, grid):
+        # grid: (B, H, W, D)
+        B, H, W, D = grid.shape
+        seq = grid.view(B, H * W, D)
+        # Use the mean as the query token
+        query = seq.mean(dim=1, keepdim=True)
+        attended, _ = self.attn(query, seq, seq)
+        normalized = self.norm(attended.squeeze(1))  # (B, D)
+        return self.fc(normalized) # (B, 1)
