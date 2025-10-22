@@ -22,23 +22,24 @@ if __name__ == "__main__":
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    arc_ahrm = ArcAHRM().to("cuda")
+    d_model = 512 + 128 + 64
+    print("d_model:", d_model)
+    arc_ahrm = ArcAHRM(d_model).to("cuda")
     optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-3)
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
 
-    # Calculate trainable parameters
-    trainable_params = sum(p.numel() for p in arc_ahrm.parameters() if p.requires_grad)
-    print(f"Trainable parameters: {trainable_params}")
-
     test_input = batchable_tasks["test"][:, 0]
     test_output = batchable_tasks["test"][:, 1]
 
-    batch_size = 8
+    batch_size = 4
     done_amount = 0
 
     while done_amount < len(batchable_tasks["train"]):
+
+        if batch_size == 0:
+            break
 
         y = None
 
@@ -71,8 +72,10 @@ if __name__ == "__main__":
             except torch.cuda.OutOfMemoryError:
                 arc_ahrm.ahrm.reset()
                 batch_size //= 2
-                batch_size = max(batch_size, 1)
+                #batch_size = max(batch_size, 1)
                 print(batch_size, "batch_size")
+                if batch_size == 0:
+                    break
             
     #y = F.softmax(y, dim=-1)
 
@@ -82,4 +85,7 @@ if __name__ == "__main__":
     #print(prediction[0])
     #print(arc_ahrm.ahrm.pattern_reader)
     
-    torch.save(arc_ahrm.state_dict(), "AbstractHRM/saved/arc_ahrm.pt")
+    if batch_size != 0:
+        torch.save(arc_ahrm.state_dict(), "AbstractHRM/saved/arc_ahrm.pt")
+    else:
+        print("batch_size has become 0")

@@ -22,13 +22,21 @@ class HRMNodeValue(NodeValue):
     def __str__(self):
         return str(self.value.shape)
     
+    def delete_unusable(pattern_reader):
+        for node in pattern_reader.node_list:
+            for i in range(len(node.values)):
+                if i == 0 or i == len(node.values) - 1:
+                    continue
+                node.values.nodeat(i).value.value = None
+        gc.collect()
+    
     def step(pattern_reader, block, x):
         
         last_change = pattern_reader.interpretation(HRMNodeValue(x))
         
         node_list = pattern_reader.node_list
 
-        zeros = torch.zeros(x.shape).to(x.device)
+        #zeros = torch.zeros(x.shape).to(x.device)
 
         started = False
         for i in range(len(node_list) - 1, 0, -1):
@@ -44,7 +52,7 @@ class HRMNodeValue(NodeValue):
                     value.is_empty = False
 
                     x_lesser = node.get_lesser_value(0).value
-                    x_greater = zeros
+                    x_greater = x
                     
                     with torch.no_grad():
                         value.value = block(x_lesser, x_greater)
@@ -56,17 +64,21 @@ class HRMNodeValue(NodeValue):
                 break
 
             lesser_node = node.lesser_nodes.last.value
-            x_lesser = lesser_node.get_lesser_value(-2).value
             x_greater = node.values.last.value.value
             
             lesser_value = lesser_node.values.last.value
             
             if i == 2:
-                lesser_value.value = block(x_lesser.detach(), x_greater)
-            else:    
+                x_lesser = lesser_node.get_lesser_value(-1).value
+                lesser_value.value = block(x_lesser, x_greater)
+            else:
+                x_lesser = lesser_node.get_lesser_value(-2).value
                 with torch.no_grad():
                     lesser_value.value = block(x_lesser, x_greater)
-            
+
+        if pattern_reader.pattern_length > 2:
+            HRMNodeValue.delete_unusable(pattern_reader)
+        
         index = min(1, len(node_list) - 1)
 
         return node_list.nodeat(index).value.values.last.value.value
@@ -80,7 +92,7 @@ class AbstractHRM(nn.Module):
         self.block = block
 
     def reset(self):
-        del self.pattern_reader
+        #del self.pattern_reader
         self.pattern_reader = PatternReader()
         gc.collect()
         torch.cuda.empty_cache()
