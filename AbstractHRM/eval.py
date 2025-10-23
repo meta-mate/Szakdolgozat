@@ -12,20 +12,20 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__)
 
-    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC/data/training")
-    augmented = LoadDataset.augment(tasks)
+    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC/data/evaluation")
+    #augmented = LoadDataset.augment(tasks)
+    #tasks.update(augmented)
     
-    tasks.update(augmented)
     keys = list(tasks.keys())
     random.shuffle(keys)
     tasks = {key: tasks[key] for key in keys}
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    d_model = 512 + 128 + 64
-    print("d_model:", d_model)
+    d_model = 128
     arc_ahrm = ArcAHRM(d_model).to("cuda")
-    optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-3)
+    arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/arc_ahrm.pt"))
+    arc_ahrm.eval()
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
@@ -48,7 +48,7 @@ if __name__ == "__main__":
                 print(done_amount, "done from", len(batchable_tasks["train"]))
                 batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
                 end = done_amount + batch_size
-                for i in range(5):
+                for i in range(13):
                     
                     if i < 2:
                         with torch.no_grad():
@@ -58,10 +58,6 @@ if __name__ == "__main__":
                     
                     target = test_output[done_amount:end].to(torch.long)
                     loss = F.cross_entropy(y.permute(0, 3, 1, 2), target)
-
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
 
                     print(loss)
 
@@ -85,7 +81,3 @@ if __name__ == "__main__":
     #print(prediction[0])
     #print(arc_ahrm.ahrm.pattern_reader)
     
-    if batch_size != 0:
-        torch.save(arc_ahrm.state_dict(), "AbstractHRM/saved/arc_ahrm.pt")
-    else:
-        print("batch_size has become 0")

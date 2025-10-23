@@ -125,11 +125,12 @@ class GridCombiner(nn.Module):
         
         B, N, H, W, D = example_grids.shape
 
-        '''
-        for i in range(4):
+
+        example_grids = self.example_shift(example_grids)
+        for i in range(1, 4):
             example_grids[:, 2*i:] = self.example_shift(example_grids[:, 2*i:])
         example_grids[:, 1::2] = self.output_shift(example_grids[:, 1::2])
-        '''
+        
 
         context = example_grids.view(B, N * H * W, D)
         query = test_input_grid.view(B, H * W, D)
