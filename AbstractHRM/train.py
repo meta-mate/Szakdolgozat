@@ -3,29 +3,41 @@ import torch.nn as nn
 import torch.nn.functional as F
 from arc_ahrm import ArcAHRM
 from load_dataset import LoadDataset
+from custom_functions import CustomFunctions
 import os
 import random
-    
+import cv2
+import numpy as np
+from visualization import Visualization
+
 
 if __name__ == "__main__":
 
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__)
 
-    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC/data/training")
-    augmented = LoadDataset.augment(tasks)
-    
-    tasks.update(augmented)
+    tasks = {}
+    tasks_ = LoadDataset.load_arc_tasks("AbstractHRM/ARC/data/training")
+    tasks = tasks_
+
+    for _ in range(1):
+        augmented = LoadDataset.augment(tasks_)
+        tasks.update(augmented)
+
     keys = list(tasks.keys())
     random.shuffle(keys)
     tasks = {key: tasks[key] for key in keys}
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    d_model = 512 + 128 + 64
+    d_model = 128
+    #d_model = 512
+    #d_model = 512 + 128 + 32 + 4
     print("d_model:", d_model)
+    
     arc_ahrm = ArcAHRM(d_model).to("cuda")
-    optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-3)
+    #arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/arc_ahrm.pt"))
+    optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-4)
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
@@ -33,10 +45,11 @@ if __name__ == "__main__":
     test_input = batchable_tasks["test"][:, 0]
     test_output = batchable_tasks["test"][:, 1]
 
-    batch_size = 4
+    max_iterations = 13
+    batch_size = 2
     y = None
 
-    for i_epoch in range(4):
+    for i_epoch in range(1):
         done_amount = 0
 
         while done_amount < len(batchable_tasks["train"]):
@@ -49,39 +62,50 @@ if __name__ == "__main__":
                     print(done_amount, "done from", len(batchable_tasks["train"]))
                     batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
                     end = done_amount + batch_size
-                    for i in range(13):
-                        
-                        if i < 2:
-                            with torch.no_grad():
-                                y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
-                            continue
-                        y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
-                        
-                        target = test_output[done_amount:end].to(torch.long)
-                        num_colors = y.shape[-1]
-                        class_weigths = [1.0 for _ in range(num_colors)]
-                        class_weigths[0] = .1
-                        class_weigths[1] = .2
-                        class_weigths = torch.tensor(class_weigths, device=y.device)
-                        loss = F.cross_entropy(
-                            y.permute(0, 3, 1, 2),
-                            target,
-                            weight=class_weigths
+                    
+                    for inner_epoch in range(16):
+                        for i in range(max_iterations):
+                            
+                            if i < max_iterations - 1:
+                                with torch.no_grad():
+                                    y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
+                                continue
+                            y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
+                            
+                            target = test_output[done_amount:end].to(torch.long)
+                            
+                            loss = F.cross_entropy(
+                                y.permute(0, 3, 1, 2),
+                                target.to(torch.long)
                             )
 
-                        base_lr = 1e-3
+                            base_lr = 1e-3
 
-                        for param_group in optimizer.param_groups:
-                            param_group['lr'] = base_lr * i * i / 3
+                            #for param_group in optimizer.param_groups:
+                            #    param_group['lr'] = base_lr * (i / 6) ** 2 / 3
 
 
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
+                            if i == max_iterations - 1:
+                                prediction = torch.argmax(F.softmax(y, dim=-1), dim=-1)
 
-                        print(loss)
+                                images = []
+                                images.append(Visualization.draw_grid(test_input[done_amount]))
+                                images.append(Visualization.draw_grid(target[0]))
+                                images.append(Visualization.draw_grid(prediction[0]))
 
-                    arc_ahrm.ahrm.reset()
+                                horizontal_concat = cv2.hconcat(images)
+                                #cv2.destroyAllWindows()
+                                cv2.imshow('input-target-prediction', horizontal_concat)
+
+                                cv2.waitKey(1)
+
+                            optimizer.zero_grad()
+                            loss.backward()
+                            optimizer.step()
+
+                            print(keys[done_amount], loss)
+
+                        arc_ahrm.ahrm.reset()
 
                     done_amount += batch_size
                     break

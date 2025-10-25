@@ -10,7 +10,7 @@ class LoadDataset:
         for fname in os.listdir(data_dir):
             if fname.endswith(".json"):
                 with open(os.path.join(data_dir, fname), "r") as f:
-                    tasks[fname] = json.load(f)
+                    tasks[fname[:-len(".json")]] = json.load(f)
         return tasks
 
 
@@ -23,7 +23,7 @@ class LoadDataset:
         return padded
 
 
-    def recolor_grid(grid, color_map = np.random.permutation(range(10))):
+    def recolor_grid(grid, color_map):
         result = grid.copy()
 
         for i in range(10):
@@ -77,7 +77,10 @@ class LoadDataset:
 
         for task_id in tasks:
             
-            color_map = np.random.permutation(range(10))
+            color_map = [i for i in range(2, 10)]
+            random.shuffle(color_map)
+            color_map = [0, 1] + color_map
+            color_map = np.array(color_map)
             rotate_amount = 0
             flip_axis = 2
             

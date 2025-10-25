@@ -7,45 +7,7 @@ import os
 import random
 import cv2
 import numpy as np
-
-def draw_grid(grid, name=""):
-
-    color_list = [
-        [0, 0, 0],
-        [0, 0, 0],
-        [30, 147, 255],
-        [249, 60, 49],
-        [79, 204, 48],
-        [255, 220, 0],
-        [153, 153, 153],
-        [229, 58, 163],
-        [255, 133, 27],
-        [135, 216, 241],
-        [146, 18, 49]
-    ]
-
-    for color in color_list:
-        color.reverse()
-
-    y = len(grid)
-    x = len(grid[0])
-
-    square_size = 25
-
-    img = np.zeros((y * square_size, x * square_size, 3), dtype=np.uint8)
-
-    for i in range(y):
-        for j in range(x):
-            start = (j * square_size, i * square_size)
-            end = tuple(s + square_size for s in start)
-            index = grid[i][j]
-            color = color_list[index]
-            cv2.rectangle(img, start, end, color, -1)
-            if index != 0:
-                cv2.rectangle(img, start, end, (127,127,127))
-
-    cv2.imshow(name, img)
-
+from visualization import Visualization
 
 if __name__ == "__main__":
 
@@ -62,7 +24,8 @@ if __name__ == "__main__":
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    d_model = 128 #512 + 128 + 64
+    d_model = 128 
+    #d_model = 512 + 128 + 64
     print("d_model:", d_model)
     arc_ahrm = ArcAHRM(d_model).to("cuda")
     arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/arc_ahrm.pt"))
@@ -74,13 +37,13 @@ if __name__ == "__main__":
     test_input = batchable_tasks["test"][:, 0]
     test_output = batchable_tasks["test"][:, 1]
 
-    batch_index = 3
+    batch_index = 64
     
     y = None
 
     for i in range(13):
         
-        if i < 2:
+        if i < 1:
             with torch.no_grad():
                 y = arc_ahrm(batchable_tasks["train"][batch_index:batch_index + 1], test_input[batch_index:batch_index + 1])
             continue
@@ -96,8 +59,12 @@ if __name__ == "__main__":
     y = F.softmax(y, dim=-1)
     prediction = torch.argmax(y, dim=-1)
 
-    draw_grid(test_input[batch_index:batch_index + 1][0], "input")
-    draw_grid(prediction[0], "output")
-    draw_grid(test_output[batch_index:batch_index + 1][0], "target")
+    images = []
+    images.append(Visualization.draw_grid(test_input[batch_index:batch_index + 1][0]))
+    images.append(Visualization.draw_grid(test_output[batch_index:batch_index + 1][0]))
+    images.append(Visualization.draw_grid(prediction[0]))
+
+    horizontal_concat = cv2.hconcat(images)
+    cv2.imshow('input-target-prediction', horizontal_concat)
 
     cv2.waitKey(0)

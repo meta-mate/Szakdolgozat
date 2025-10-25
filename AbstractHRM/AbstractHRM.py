@@ -30,13 +30,11 @@ class HRMNodeValue(NodeValue):
                 node.values.nodeat(i).value.value = None
         gc.collect()
     
-    def step(pattern_reader, block, x):
+    def step(pattern_reader, block, x_lowest, x_greatest):
         
-        last_change = pattern_reader.interpretation(HRMNodeValue(x))
+        last_change = pattern_reader.interpretation(HRMNodeValue(x_lowest))
         
         node_list = pattern_reader.node_list
-
-        #zeros = torch.zeros(x.shape).to(x.device)
 
         started = False
         for i in range(len(node_list) - 1, 0, -1):
@@ -51,11 +49,18 @@ class HRMNodeValue(NodeValue):
                     value = node.values.first.value
                     value.is_empty = False
 
-                    x_lesser = node.get_lesser_value(0).value
-                    x_greater = x
+                    x_lesser = node.get_lesser_value(-2).value
+                    x_greater = x_greatest
                     
-                    with torch.no_grad():
+                    if i == 1:
+                        x_lesser = node.get_lesser_value(-1).value
                         value.value = block(x_lesser, x_greater)
+                    else:
+                        #x_lesser = x_lesser.detach()
+                        with torch.no_grad():
+                            value.value = block(x_lesser, x_greater)
+
+                    #value.value = block(x_lesser, x_greater)
 
                 else:
                     continue
@@ -64,6 +69,7 @@ class HRMNodeValue(NodeValue):
                 break
 
             lesser_node = node.lesser_nodes.last.value
+            x_lesser = lesser_node.get_lesser_value(-2).value
             x_greater = node.values.last.value.value
             
             lesser_value = lesser_node.values.last.value
@@ -72,9 +78,11 @@ class HRMNodeValue(NodeValue):
                 x_lesser = lesser_node.get_lesser_value(-1).value
                 lesser_value.value = block(x_lesser, x_greater)
             else:
-                x_lesser = lesser_node.get_lesser_value(-2).value
+                #x_lesser = x_lesser.detach()
                 with torch.no_grad():
                     lesser_value.value = block(x_lesser, x_greater)
+                
+            #lesser_value.value = block(x_lesser, x_greater)
 
         if pattern_reader.pattern_length > 2:
             HRMNodeValue.delete_unusable(pattern_reader)
@@ -97,20 +105,12 @@ class AbstractHRM(nn.Module):
         gc.collect()
         torch.cuda.empty_cache()
 
-    def forward(self, x):
-        
-        return HRMNodeValue.step(self.pattern_reader, self.block, x)
-
+    def forward(self, x_lowest, x_greatest):
         '''
         The stopping logic should take into account:
          - the loss, or the non-ambiguity of the output, and its convergence
          - by how much the next steps computation will grow (n * n / 3)
          - the number of new name types, that indicate unique vantage points
         '''
-        y = None
-        for i in range(5):
-            y = HRMNodeValue.step(self.pattern_reader, self.block, x)
-        
-        self.reset()
-        return y
+        return HRMNodeValue.step(self.pattern_reader, self.block, x_lowest, x_greatest)
 
