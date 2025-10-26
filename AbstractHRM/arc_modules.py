@@ -87,7 +87,6 @@ class GridDecode(nn.Module):
 
 
 class RoleShift(nn.Module):
-    """Generic shift module for transforming a grid embedding."""
     def __init__(self, d_model):
         super().__init__()
         self.d_model = d_model

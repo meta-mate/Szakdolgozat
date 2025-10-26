@@ -14,10 +14,12 @@ from visualization import Visualization
 if __name__ == "__main__":
 
     torch.autograd.set_detect_anomaly(True)
-    print(torch.__version__)
+    print(torch.__version__, torch.cuda.is_available())
+
+    script_directory = os.path.dirname(os.path.realpath(__file__))
 
     tasks = {}
-    tasks_ = LoadDataset.load_arc_tasks("AbstractHRM/ARC/data/training")
+    tasks_ = LoadDataset.load_arc_tasks(script_directory + "/ARC/data/training")
     tasks = tasks_
 
     for _ in range(1):
@@ -30,13 +32,13 @@ if __name__ == "__main__":
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    d_model = 128
-    #d_model = 512
+    #d_model = 128
+    d_model = 512
     #d_model = 512 + 128 + 32 + 4
     print("d_model:", d_model)
     
     arc_ahrm = ArcAHRM(d_model).to("cuda")
-    #arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/arc_ahrm.pt"))
+    #arc_ahrm.load_state_dict(torch.load(script_directory + "/saved/arc_ahrm.pt"))
     optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-4)
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
@@ -63,7 +65,7 @@ if __name__ == "__main__":
                     batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
                     end = done_amount + batch_size
                     
-                    for inner_epoch in range(16):
+                    for inner_epoch in range(32):
                         for i in range(max_iterations):
                             
                             if i < max_iterations - 1:
@@ -126,6 +128,6 @@ if __name__ == "__main__":
     #print(arc_ahrm.ahrm.pattern_reader)
     
     if batch_size != 0:
-        torch.save(arc_ahrm.state_dict(), "AbstractHRM/saved/arc_ahrm.pt")
+        torch.save(arc_ahrm.state_dict(), script_directory + "/saved/arc_ahrm.pt")
     else:
         print("batch_size has become 0")
