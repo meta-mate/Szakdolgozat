@@ -14,7 +14,7 @@ class ArcAHRM(nn.Module):
         self.grid_embed = am.GridEmbed(d_model)
         self.grid_combiner = am.GridCombiner(d_model)
         self.grid_decode = am.GridDecode(d_model)
-        self.act = am.ACTModule(d_model)
+        #self.act = am.ACTModule(d_model)
         #self.greatest_shift = am.RoleShift(d_model)
 
     def forward(self, train_examples, test_examples):

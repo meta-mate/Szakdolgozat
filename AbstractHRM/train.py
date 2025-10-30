@@ -19,12 +19,17 @@ if __name__ == "__main__":
     script_directory = os.path.dirname(os.path.realpath(__file__))
 
     tasks = {}
-    tasks_ = LoadDataset.load_arc_tasks(script_directory + "/ARC/data/training")
-    tasks = tasks_
+    tasks_ = {}
+    tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC/data/training"))
 
     for _ in range(1):
         augmented = LoadDataset.augment(tasks_)
         tasks.update(augmented)
+
+    #tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC/data/evaluation"))
+    #tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/training"))
+    #tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/evaluation"))
+    tasks.update(tasks_)
 
     keys = list(tasks.keys())
     random.shuffle(keys)
@@ -34,7 +39,7 @@ if __name__ == "__main__":
 
     #d_model = 128
     d_model = 512
-    #d_model = 512 + 128 + 32 + 4
+    #d_model = 512 + 128 + 64
     print("d_model:", d_model)
     
     arc_ahrm = ArcAHRM(d_model).to("cuda")
@@ -61,7 +66,7 @@ if __name__ == "__main__":
 
             while True:
                 try:
-                    print(done_amount, "done from", len(batchable_tasks["train"]))
+                    print(i_epoch, "epoch", done_amount, "done from", len(batchable_tasks["train"]))
                     batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
                     end = done_amount + batch_size
                     
@@ -72,40 +77,41 @@ if __name__ == "__main__":
                                 with torch.no_grad():
                                     y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
                                 continue
-                            y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
+                            else:
+                                y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
                             
                             target = test_output[done_amount:end].to(torch.long)
                             
+                            prediction = torch.argmax(F.softmax(y, dim=-1), dim=-1)
+
+                            images = []
+                            images.append(Visualization.draw_grid(test_input[done_amount]))
+                            images.append(Visualization.draw_grid(target[0]))
+                            images.append(Visualization.draw_grid(prediction[0]))
+
+                            horizontal_concat = cv2.hconcat(images)
+                            #cv2.destroyAllWindows()
+                            cv2.imshow('input-target-prediction', horizontal_concat)
+
+                            cv2.waitKey(1)
+
+                            print(keys[done_amount], i)
+
+                            if i < max_iterations - 1:
+                                continue
+
                             loss = F.cross_entropy(
                                 y.permute(0, 3, 1, 2),
                                 target.to(torch.long)
                             )
 
+                            print(keys[done_amount], loss)
+
                             base_lr = 1e-3
-
-                            #for param_group in optimizer.param_groups:
-                            #    param_group['lr'] = base_lr * (i / 6) ** 2 / 3
-
-
-                            if i == max_iterations - 1:
-                                prediction = torch.argmax(F.softmax(y, dim=-1), dim=-1)
-
-                                images = []
-                                images.append(Visualization.draw_grid(test_input[done_amount]))
-                                images.append(Visualization.draw_grid(target[0]))
-                                images.append(Visualization.draw_grid(prediction[0]))
-
-                                horizontal_concat = cv2.hconcat(images)
-                                #cv2.destroyAllWindows()
-                                cv2.imshow('input-target-prediction', horizontal_concat)
-
-                                cv2.waitKey(1)
 
                             optimizer.zero_grad()
                             loss.backward()
                             optimizer.step()
-
-                            print(keys[done_amount], loss)
 
                         arc_ahrm.ahrm.reset()
 

@@ -3,7 +3,7 @@ import numpy as np
 
 class Visualization():
 
-    def draw_grid(grid, name=""):
+    def draw_grid(grid, square_size=15):
 
         color_list = [
             [0, 0, 0],
@@ -24,8 +24,6 @@ class Visualization():
 
         y = len(grid)
         x = len(grid[0])
-
-        square_size = 15
 
         img = np.zeros((y * square_size, x * square_size, 3), dtype=np.uint8)
 

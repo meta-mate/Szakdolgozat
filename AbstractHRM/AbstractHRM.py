@@ -53,7 +53,6 @@ class HRMNodeValue(NodeValue):
                     x_greater = x_greatest
                     
                     if i == 1:
-                        x_lesser = node.get_lesser_value(-1).value
                         value.value = block(x_lesser, x_greater)
                     else:
                         #x_lesser = x_lesser.detach()
@@ -75,7 +74,6 @@ class HRMNodeValue(NodeValue):
             lesser_value = lesser_node.values.last.value
             
             if i == 2:
-                x_lesser = lesser_node.get_lesser_value(-1).value
                 lesser_value.value = block(x_lesser, x_greater)
             else:
                 #x_lesser = x_lesser.detach()
@@ -100,7 +98,6 @@ class AbstractHRM(nn.Module):
         self.block = block
 
     def reset(self):
-        #del self.pattern_reader
         self.pattern_reader = PatternReader()
         gc.collect()
         torch.cuda.empty_cache()

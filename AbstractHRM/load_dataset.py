@@ -39,29 +39,40 @@ class LoadDataset:
         Keep the train/test outer dictionary.
         """
         
-        result = {}
-        result["train"] = []
-        result["test"] = []
+        result = {"train": [], "test": []}
 
+        max_amount = {"train": 0, "test": 0}
+        for task_id in tasks:
+            task = tasks[task_id]
+            for example_type in result:
+                length = len(task[example_type])
+                max_amount[example_type] = max(max_amount[example_type], length)
+
+        max_amount["test"] = 4
+        
         for task_id in tasks:
             
             task = tasks[task_id]
 
-            for example_type in result:
-                result[example_type].append([])
-                length = 4
-                #if example_type == "test":
-                #    length = 1
+            for j in range(len(task["test"])):
+                result["train"].append([])
+                length = max_amount["train"]
                 for i in range(length):
-                    if i < len(task[example_type]):
-                        example_io = task[example_type][i]
+                    if i < len(task["train"]):
+                        example_io = task["train"][i]
                         for grid in example_io.values():
                             padded_grid = np.array(LoadDataset.pad_grid(grid)) + 1
-                            result[example_type][-1].append(padded_grid)
+                            result["train"][-1].append(padded_grid)
                     else:
                         for _ in range(2):
                             empty_grid = np.full((30, 30), 0)
-                            result[example_type][-1].append(empty_grid)
+                            result["train"][-1].append(empty_grid)
+
+                result["test"].append([])
+                example_io = task["test"][j]
+                for grid in example_io.values():
+                    padded_grid = np.array(LoadDataset.pad_grid(grid)) + 1
+                    result["test"][-1].append(padded_grid)
 
         for example_type in result:
             new_element = np.array(result[example_type])
