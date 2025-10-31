@@ -37,8 +37,8 @@ if __name__ == "__main__":
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    #d_model = 128
-    d_model = 512
+    d_model = 128
+    #d_model = 512
     #d_model = 512 + 128 + 64 + 32
     print("d_model:", d_model)
     
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     test_input = batchable_tasks["test"][:, 0]
     test_output = batchable_tasks["test"][:, 1]
 
-    max_iterations = 13
+    max_iterations = 5
     batch_size = 2
     y = None
 
@@ -67,8 +67,8 @@ if __name__ == "__main__":
             while True:
                 try:
                     print(i_epoch, "epoch", done_amount, "done from", len(batchable_tasks["train"]))
-                    batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
-                    end = done_amount + batch_size
+                    current_batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
+                    end = done_amount + current_batch_size
                     
                     for inner_epoch in range(32):
                         for i in range(max_iterations):
@@ -76,7 +76,7 @@ if __name__ == "__main__":
                             if i < max_iterations - 1:
                                 with torch.no_grad():
                                     y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
-                                #continue
+                                continue
                             else:
                                 y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
                             
@@ -115,7 +115,7 @@ if __name__ == "__main__":
 
                         arc_ahrm.ahrm.reset()
 
-                    done_amount += batch_size
+                    done_amount += current_batch_size
                     break
                 except torch.cuda.OutOfMemoryError:
                     arc_ahrm.ahrm.reset()
