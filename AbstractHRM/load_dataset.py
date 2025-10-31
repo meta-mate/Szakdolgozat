@@ -100,7 +100,10 @@ class LoadDataset:
                 flip_axis = random.randint(0, 2)
 
             result_id = task_id
-            result_id += "_" + str(rotate_amount) + "_" + str(flip_axis)
+            result_id += "_" + str(rotate_amount) + "_" + str(flip_axis) + "_"
+
+            for i in range(2, len(color_map)):
+                result_id += str(color_map[i])
 
             augmentations[result_id] = {}
             augmentations[result_id]["train"] = []
