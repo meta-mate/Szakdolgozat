@@ -75,12 +75,12 @@ if __name__ == "__main__":
                             
                             if i < max_iterations - 1:
                                 with torch.no_grad():
-                                    y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
+                                    y = arc_ahrm(batchable_tasks["train"][done_amount:end].detach(), test_input[done_amount:end].detach())
                                 continue
                             else:
-                                y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
+                                y = arc_ahrm(batchable_tasks["train"][done_amount:end].detach(), test_input[done_amount:end].detach())
                             
-                            target = test_output[done_amount:end].to(torch.long)
+                            target = test_output[done_amount:end].detach().to(torch.long)
                             
                             prediction = torch.argmax(F.softmax(y, dim=-1), dim=-1)
 
@@ -105,7 +105,7 @@ if __name__ == "__main__":
                                 target.to(torch.long)
                             )
 
-                            print(keys[done_amount], loss)
+                            print(keys[done_amount], loss, torch.cuda.memory_allocated() / 1024 / 1024)
 
                             base_lr = 1e-3
 

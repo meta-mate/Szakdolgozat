@@ -126,7 +126,7 @@ class GridCombiner(nn.Module):
 
 
         example_grids = self.example_shift(example_grids)
-        for i in range(1, N):
+        for i in range(1, N // 2):
             example_grids[:, 2*i:] = self.example_shift(example_grids[:, 2*i:])
         example_grids[:, 1::2] = self.output_shift(example_grids[:, 1::2])
         
