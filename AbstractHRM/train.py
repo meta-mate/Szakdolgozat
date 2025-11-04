@@ -6,6 +6,8 @@ from load_dataset import LoadDataset
 from custom_functions import CustomFunctions
 import os
 import random
+import time
+import json
 import cv2
 import numpy as np
 from visualization import Visualization
@@ -37,8 +39,8 @@ if __name__ == "__main__":
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    d_model = 128
-    #d_model = 512
+    #d_model = 128
+    d_model = 512
     #d_model = 512 + 128 + 64 + 32
     print("d_model:", d_model)
     
@@ -49,16 +51,18 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
 
-    test_input = batchable_tasks["test"][:, 0]
+    test_input = batchable_tasks["test"][:, 0:1]
     test_output = batchable_tasks["test"][:, 1]
 
     max_iterations = 5
     batch_size = 2
     y = None
 
+    epoch_losses = []
     for i_epoch in range(1):
         done_amount = 0
 
+        epoch_loss = 0
         while done_amount < len(batchable_tasks["train"]):
 
             if batch_size == 0:
@@ -70,22 +74,26 @@ if __name__ == "__main__":
                     current_batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
                     end = done_amount + current_batch_size
                     
-                    for inner_epoch in range(32):
+                    x_train = batchable_tasks["train"][done_amount:end]
+                    x_test = test_input[done_amount:end]
+                    target = test_output[done_amount:end].to(torch.long)
+
+                    for inner_epoch in range(1):
+                        start_time = time.perf_counter()
                         for i in range(max_iterations):
                             
                             if i < max_iterations - 1:
                                 with torch.no_grad():
-                                    y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
+                                    y = arc_ahrm(x_train, x_test)
                                 continue
                             else:
-                                y = arc_ahrm(batchable_tasks["train"][done_amount:end], test_input[done_amount:end])
+                                y = arc_ahrm(x_train, x_test)
                             
-                            target = test_output[done_amount:end].to(torch.long)
                             
                             prediction = torch.argmax(F.softmax(y, dim=-1), dim=-1)
 
                             images = []
-                            images.append(Visualization.draw_grid(test_input[done_amount]))
+                            images.append(Visualization.draw_grid(test_input[done_amount][0]))
                             images.append(Visualization.draw_grid(target[0]))
                             images.append(Visualization.draw_grid(prediction[0]))
 
@@ -95,25 +103,25 @@ if __name__ == "__main__":
 
                             cv2.waitKey(1)
 
-                            print(keys[done_amount], i)
-
                             if i < max_iterations - 1:
                                 continue
 
                             loss = F.cross_entropy(
                                 y.permute(0, 3, 1, 2),
-                                target.to(torch.long)
+                                target
                             )
 
-                            print(keys[done_amount], loss, torch.cuda.memory_allocated() / 1024 / 1024)
+                            epoch_loss += loss.item()
 
-                            base_lr = 1e-3
+                            print(loss, torch.cuda.memory_allocated() / 1024 / 1024)
 
                             optimizer.zero_grad()
                             loss.backward()
                             optimizer.step()
 
                         arc_ahrm.ahrm.reset()
+                        end_time = time.perf_counter() - start_time
+                        print("end_time", end_time)
 
                     done_amount += current_batch_size
                     break
@@ -124,7 +132,9 @@ if __name__ == "__main__":
                     print(batch_size, "batch_size")
                     if batch_size == 0:
                         break
-            
+        
+        epoch_losses.append(epoch_loss)
+
     #y = F.softmax(y, dim=-1)
 
     #prediction = torch.argmax(y, dim=-1)
@@ -135,5 +145,7 @@ if __name__ == "__main__":
     
     if batch_size != 0:
         torch.save(arc_ahrm.state_dict(), script_directory + "/saved/arc_ahrm.pt")
+        with open(script_directory + '/saved/epoch_losses.json', 'w') as f:
+            json.dump(epoch_losses, f)
     else:
         print("batch_size has become 0")

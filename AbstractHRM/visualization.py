@@ -37,6 +37,6 @@ class Visualization():
                 if index != 0:
                     cv2.rectangle(img, start, end, (127,127,127), 2)
 
-        cv2.rectangle(img, (0, 0), (y * square_size, x * square_size), (127, 127, 127), 2)
+        cv2.rectangle(img, (0, 0), (y * square_size, x * square_size), (255, 255, 255), 2)
 
         return img

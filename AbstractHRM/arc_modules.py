@@ -27,7 +27,7 @@ class ReasoningBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x_lesser, x_greater):
-        # Flatten (H, W, d_model) → (H*W, d_model)
+        # Flatten (H, W, d_model) to (H*W, d_model)
         B, H, W, D = x_lesser.shape
         x_lesser = x_lesser.view(B, H * W, D)
         x_greater = x_greater.view(B, H * W, D)
@@ -53,25 +53,73 @@ class ReasoningBlock(nn.Module):
         # Reshape back to grid form
         return combined.view(B, H, W, D)
 
+
 class GridEmbed(nn.Module):
-    def __init__(self, d_model, max_size=30, num_colors=10):
+    def __init__(self, d_model, num_colors=11, num_examples=11, H=30, W=30):
+        """
+        num_colors: total number of possible grid values (including 'empty')
+        num_examples: number of input/output pairs per sample
+        d_model: dimension of the embeddings
+        H, W: grid dimensions
+        """
         super().__init__()
         self.d_model = d_model
-        self.color_emb = nn.Embedding(num_colors + 1, d_model)
-        self.row_emb   = nn.Embedding(max_size, d_model)
-        self.col_emb   = nn.Embedding(max_size, d_model)
-
-    def forward(self, grid):
-        device = grid.device
-        shape = grid.shape
-        H, W = shape[-2:]
-        shape += (self.d_model,)
-        grid = grid.reshape(-1)
-        color = self.color_emb(grid).view(shape)
-        rows  = self.row_emb(torch.arange(H, device=device).unsqueeze(1).expand(H, W))
-        cols  = self.col_emb(torch.arange(W, device=device).unsqueeze(0).expand(H, W))
-        out = color + rows + cols
-        return out.view(shape)  # flatten to sequence [N, d]
+        
+        # Embeddings for each grid dimension / role
+        self.color_embed = nn.Embedding(num_colors, d_model)
+        self.row_embed = nn.Embedding(H, d_model)
+        self.col_embed = nn.Embedding(W, d_model)
+        self.example_embed = nn.Embedding(num_examples, d_model)
+        self.role_embed = nn.Embedding(2, d_model)  # 0 = input, 1 = output
+        
+        # Final projection to combine all sources
+        self.proj = nn.Linear(d_model * 5, d_model)
+    
+    def forward(self, grids):
+        """
+        grids: Tensor (B, N, H, W) of integer color indices
+        where:
+          - B: batch size
+          - N: number of grids (alternating input/output)
+        """
+        B, N, H, W = grids.shape
+        device = grids.device
+        D = self.d_model
+        
+        # Base color embeddings
+        color_emb = self.color_embed(grids).view(B, N, H, W, D)
+        
+        # Spatial encodings
+        rows = torch.arange(H, device=device)
+        cols = torch.arange(W, device=device)
+        row_emb = self.row_embed(rows).view(1, 1, H, 1, D)
+        col_emb = self.col_embed(cols).view(1, 1, 1, W, D)
+        
+        # Example (pair) encodings: [0,0,1,1,2,2,...]
+        example_ids = torch.tensor([0], device=device)
+        if N > 1:
+            example_ids = torch.arange(N, device=device) // 2 + 1
+        example_emb = self.example_embed(example_ids).view(1, N, 1, 1, D)
+        
+        # Role encodings: [0,1,0,1,0,1,...]
+        role_ids = torch.tensor([0], device=device)
+        if N > 1:
+            role_ids = torch.arange(N, device=device) % 2
+        role_emb = self.role_embed(role_ids).view(1, N, 1, 1, D)
+        
+        # Combine all embeddings
+        emb = torch.cat([
+            color_emb,
+            row_emb.expand(B, N, H, W, D),
+            col_emb.expand(B, N, H, W, D),
+            example_emb.expand(B, N, H, W, D),
+            role_emb.expand(B, N, H, W, D)
+        ], dim=-1)
+        
+        # Project to final embedding space
+        emb = self.proj(emb)
+        
+        return emb  # shape: (B, N, H, W, d_model)
 
 
 class GridDecode(nn.Module):
@@ -117,19 +165,9 @@ class GridCombiner(nn.Module):
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
-        self.output_shift = RoleShift(d_model)
-        self.example_shift = RoleShift(d_model)
-
     def forward(self, example_grids, test_input_grid):
         
         B, N, H, W, D = example_grids.shape
-
-
-        example_grids = self.example_shift(example_grids)
-        for i in range(1, N // 2):
-            example_grids[:, 2*i:] = self.example_shift(example_grids[:, 2*i:])
-        example_grids[:, 1::2] = self.output_shift(example_grids[:, 1::2])
-        
 
         context = example_grids.view(B, N * H * W, D)
         query = test_input_grid.view(B, H * W, D)

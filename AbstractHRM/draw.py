@@ -14,7 +14,7 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__)
 
-    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC/data/evaluation")
+    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC-AGI-2/data/training")
     #augmented = LoadDataset.augment(tasks)
     #tasks.update(augmented)
     
@@ -24,7 +24,8 @@ if __name__ == "__main__":
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    d_model = 128 
+    #d_model = 128 
+    d_model = 512
     #d_model = 512 + 128 + 64
     print("d_model:", d_model)
     arc_ahrm = ArcAHRM(d_model).to("cuda")
@@ -37,22 +38,16 @@ if __name__ == "__main__":
     test_input = batchable_tasks["test"][:, 0]
     test_output = batchable_tasks["test"][:, 1]
 
-    batch_index = 64
+    batch_index = random.randint(0, len(test_input))
+    batch_index = 492
+    print(batch_index)
     
     y = None
 
     for i in range(13):
-        
-        if i < 1:
-            with torch.no_grad():
-                y = arc_ahrm(batchable_tasks["train"][batch_index:batch_index + 1], test_input[batch_index:batch_index + 1])
-            continue
-        y = arc_ahrm(batchable_tasks["train"][batch_index:batch_index + 1], test_input[batch_index:batch_index + 1])
-        
-        target = test_output[batch_index:batch_index + 1].to(torch.long)
-        loss = F.cross_entropy(y.permute(0, 3, 1, 2), target)
-
-        print(loss)
+        with torch.no_grad():
+            y = arc_ahrm(batchable_tasks["train"][batch_index:batch_index + 1], test_input[batch_index:batch_index + 1])
+            
 
     arc_ahrm.ahrm.reset()
 
