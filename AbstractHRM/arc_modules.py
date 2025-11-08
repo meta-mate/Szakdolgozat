@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import time
 
 class ReasoningBlock(nn.Module):
     def __init__(self, d_model, n_heads=4, dropout=0.1):
@@ -27,6 +28,7 @@ class ReasoningBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x_lesser, x_greater):
+        start_time = time.perf_counter()
         # Flatten (H, W, d_model) to (H*W, d_model)
         B, H, W, D = x_lesser.shape
         x_lesser = x_lesser.view(B, H * W, D)
@@ -50,8 +52,11 @@ class ReasoningBlock(nn.Module):
         combined = (x_lesser + x_greater) / 2  # merge both perspectives
         combined = self.norm3(combined + self.dropout(self.ff(combined)))
 
+        combined = combined.view(B, H, W, D)
+
+        #print("reasoning_block", time.perf_counter() - start_time)
         # Reshape back to grid form
-        return combined.view(B, H, W, D)
+        return combined
 
 
 class GridEmbed(nn.Module):
@@ -73,7 +78,7 @@ class GridEmbed(nn.Module):
         self.role_embed = nn.Embedding(2, d_model)  # 0 = input, 1 = output
         
         # Final projection to combine all sources
-        self.proj = nn.Linear(d_model * 5, d_model)
+        #self.proj = nn.Linear(d_model * 5, d_model)
     
     def forward(self, grids):
         """
@@ -82,6 +87,7 @@ class GridEmbed(nn.Module):
           - B: batch size
           - N: number of grids (alternating input/output)
         """
+        start_time = time.perf_counter()
         B, N, H, W = grids.shape
         device = grids.device
         D = self.d_model
@@ -107,17 +113,15 @@ class GridEmbed(nn.Module):
             role_ids = torch.arange(N, device=device) % 2
         role_emb = self.role_embed(role_ids).view(1, N, 1, 1, D)
         
-        # Combine all embeddings
-        emb = torch.cat([
-            color_emb,
-            row_emb.expand(B, N, H, W, D),
-            col_emb.expand(B, N, H, W, D),
-            example_emb.expand(B, N, H, W, D),
-            role_emb.expand(B, N, H, W, D)
-        ], dim=-1)
-        
-        # Project to final embedding space
-        emb = self.proj(emb)
+        emb = (
+            color_emb +
+            row_emb.view(1, 1, H, 1, D) +
+            col_emb.view(1, 1, 1, W, D) +
+            example_emb.view(1, N, 1, 1, D) +
+            role_emb.view(1, N, 1, 1, D)
+        )
+
+        #print("grid_embed", time.perf_counter() - start_time, grids.shape)
         
         return emb  # shape: (B, N, H, W, d_model)
 
@@ -129,28 +133,14 @@ class GridDecode(nn.Module):
         self.head = nn.Linear(d_model, num_colors + 1)
 
     def forward(self, seq):
+        start_time = time.perf_counter()
         B, H, W, d_model = seq.shape[-4:]        
         logits = self.head(seq)          # [N, num_colors]
-        return logits.view(B, H, W, -1)     # [H, W, num_colors]
+        
+        logits = logits.view(B, H, W, -1)
+        #print("grid_decode", time.perf_counter() - start_time)
+        return logits     # [H, W, num_colors]
 
-
-class RoleShift(nn.Module):
-    def __init__(self, d_model):
-        super().__init__()
-        self.d_model = d_model
-        self.net = nn.Sequential(
-            nn.LayerNorm(d_model),
-            nn.Linear(d_model, d_model * 2),
-            nn.GELU(),
-            nn.Linear(d_model * 2, d_model)
-        )
-    
-    def forward(self, x):
-        shape = x.shape
-        x = x.reshape(-1, self.d_model)
-        y = self.net(x)
-        return y.view(shape)
-    
 
 class GridCombiner(nn.Module):
     def __init__(self, d_model, n_heads=4, dropout=0.1):
@@ -166,17 +156,22 @@ class GridCombiner(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, example_grids, test_input_grid):
-        
+        start_time = time.perf_counter()   
         B, N, H, W, D = example_grids.shape
 
         context = example_grids.view(B, N * H * W, D)
+        #context = example_grids.mean(dim=1).view(B, H * W, D)
         query = test_input_grid.view(B, H * W, D)
 
         attended, _ = self.attn(query, context, context)
-        x1 = self.norm1(query + self.dropout(attended))
-        x = self.norm2(x1 + self.dropout(self.ff(x1)))
+        
+        x = self.norm1(query + self.dropout(attended))
+        x = self.norm2(x + self.dropout(self.ff(x)))
 
-        return x.view(B, H, W, D)
+        x = x.view(B, H, W, D)
+        #print("grid_combiner", time.perf_counter() - start_time)
+
+        return x
 
 
 class ACTModule(nn.Module):

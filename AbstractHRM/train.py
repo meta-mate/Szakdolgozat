@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from arc_ahrm import ArcAHRM
 from load_dataset import LoadDataset
-from custom_functions import CustomFunctions
 import os
 import random
 import time
@@ -13,55 +12,42 @@ import numpy as np
 from visualization import Visualization
 
 
-if __name__ == "__main__":
+script_directory = os.path.dirname(os.path.realpath(__file__))
+
+
+def train(
+        draw_func,
+        arc_ahrm,
+        optimizer,
+        tasks,
+        batch_size,
+        epochs,
+        save_each,
+        save_name="arc_ahrm"
+        ):
 
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__, torch.cuda.is_available())
-
-    script_directory = os.path.dirname(os.path.realpath(__file__))
-
-    tasks = {}
-    tasks_ = {}
-    tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC/data/training"))
-
-    for _ in range(1):
-        augmented = LoadDataset.augment(tasks_)
-        tasks.update(augmented)
-
-    #tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC/data/evaluation"))
-    #tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/training"))
-    #tasks_.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/evaluation"))
-    tasks.update(tasks_)
-
+    
     keys = list(tasks.keys())
     random.shuffle(keys)
     tasks = {key: tasks[key] for key in keys}
 
     batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
 
-    #d_model = 128
-    d_model = 512
-    #d_model = 512 + 128 + 64 + 32
-    print("d_model:", d_model)
-    
-    arc_ahrm = ArcAHRM(d_model).to("cuda")
-    #arc_ahrm.load_state_dict(torch.load(script_directory + "/saved/arc_ahrm.pt"))
-    optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-4)
-
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
 
-    test_input = batchable_tasks["test"][:, 0:1]
-    test_output = batchable_tasks["test"][:, 1]
-
-    max_iterations = 5
-    batch_size = 2
+    max_iterations = 13
     y = None
 
     epoch_losses = []
-    for i_epoch in range(1):
+    for i_epoch in range(epochs):
+        
+        test_input = batchable_tasks["test"][:, 0:1]
+        test_output = batchable_tasks["test"][:, 1]
+        
         done_amount = 0
-
         epoch_loss = 0
         while done_amount < len(batchable_tasks["train"]):
 
@@ -81,7 +67,6 @@ if __name__ == "__main__":
                     for inner_epoch in range(1):
                         start_time = time.perf_counter()
                         for i in range(max_iterations):
-                            
                             if i < max_iterations - 1:
                                 with torch.no_grad():
                                     y = arc_ahrm(x_train, x_test)
@@ -89,19 +74,17 @@ if __name__ == "__main__":
                             else:
                                 y = arc_ahrm(x_train, x_test)
                             
-                            
                             prediction = torch.argmax(F.softmax(y, dim=-1), dim=-1)
 
+                            random_index = random.randint(0, current_batch_size - 1)
                             images = []
-                            images.append(Visualization.draw_grid(test_input[done_amount][0]))
-                            images.append(Visualization.draw_grid(target[0]))
-                            images.append(Visualization.draw_grid(prediction[0]))
+                            images.append(Visualization.draw_grid(test_input[done_amount + random_index][0]))
+                            images.append(Visualization.draw_grid(target[random_index]))
+                            images.append(Visualization.draw_grid(prediction[random_index]))
 
                             horizontal_concat = cv2.hconcat(images)
-                            #cv2.destroyAllWindows()
-                            cv2.imshow('input-target-prediction', horizontal_concat)
-
-                            cv2.waitKey(1)
+                            
+                            draw_func(horizontal_concat)
 
                             if i < max_iterations - 1:
                                 continue
@@ -128,24 +111,43 @@ if __name__ == "__main__":
                 except torch.cuda.OutOfMemoryError:
                     arc_ahrm.ahrm.reset()
                     batch_size //= 2
-                    #batch_size = max(batch_size, 1)
                     print(batch_size, "batch_size")
                     if batch_size == 0:
                         break
         
         epoch_losses.append(epoch_loss)
 
-    #y = F.softmax(y, dim=-1)
+        keys = list(tasks.keys())
+        random.shuffle(keys)
+        tasks = {key: tasks[key] for key in keys}
 
-    #prediction = torch.argmax(y, dim=-1)
-
-    #print(prediction.shape)
-    #print(prediction[0])
-    #print(arc_ahrm.ahrm.pattern_reader)
+        augmented = LoadDataset.augment(tasks)
+        batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
     
-    if batch_size != 0:
-        torch.save(arc_ahrm.state_dict(), script_directory + "/saved/arc_ahrm.pt")
-        with open(script_directory + '/saved/epoch_losses.json', 'w') as f:
-            json.dump(epoch_losses, f)
-    else:
+        if (i_epoch + 1) % save_each:
+            torch.save(arc_ahrm.state_dict(), script_directory + f"/saved/{save_name}_{i_epoch + 1}.pt")
+            with open(script_directory + f'/saved/{save_name}_{i_epoch + 1}_epoch_losses.json', 'w') as f:
+                json.dump(epoch_losses, f)
+    if batch_size == 0:
         print("batch_size has become 0")
+
+def cv2imshow(img):
+    cv2.imshow('input-target-prediction', img)
+    cv2.waitKey(1)
+
+if __name__ == "__main__":
+    
+    d_model = 512
+    arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
+    optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-4)
+    
+    batch_size = 2
+
+    tasks = {}
+    tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI/data/training"))
+    #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI/data/evaluation"))
+    #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/training"))
+    #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/evaluation"))
+
+    train(cv2imshow, arc_ahrm, optimizer, tasks, batch_size, 2, 2, "arc_ahrm_t")
+    cv2.destroyAllWindows()

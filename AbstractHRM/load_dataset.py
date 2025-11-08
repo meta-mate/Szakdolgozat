@@ -92,12 +92,9 @@ class LoadDataset:
             random.shuffle(color_map)
             color_map = [0, 1] + color_map
             color_map = np.array(color_map)
-            rotate_amount = 0
-            flip_axis = 2
             
-            while rotate_amount == 0 and flip_axis == 2:
-                rotate_amount = random.randint(0, 3)
-                flip_axis = random.randint(0, 2)
+            rotate_amount = random.randint(0, 3)
+            flip_axis = random.randint(0, 2)
 
             result_id = task_id
             result_id += "_" + str(rotate_amount) + "_" + str(flip_axis) + "_"

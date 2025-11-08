@@ -15,22 +15,24 @@ class ArcAHRM(nn.Module):
         self.grid_combiner = am.GridCombiner(d_model)
         self.grid_decode = am.GridDecode(d_model)
         #self.act = am.ACTModule(d_model)
-        #self.greatest_shift = am.RoleShift(d_model)
         self.combined = None
 
     def forward(self, train_examples, test_examples):
         
         pattern_length = self.ahrm.pattern_reader.pattern_length
         if torch.is_grad_enabled() or pattern_length == 0:
+            self.not_started = False
             train_embedded = self.grid_embed(train_examples)
             test_embedded = self.grid_embed(test_examples)
             
             self.combined = self.grid_combiner(train_embedded, test_embedded)
-        
+            #B, N, H, W, D = test_embedded.shape
+            #self.combined = test_embedded.view(B, H, W, D)
+
         x_lowest = self.combined
-        #x_greatest = self.greatest_shift(x_lowest)
         x_greatest = x_lowest
 
+        reasoned = x_lowest
         reasoned = self.ahrm(x_lowest, x_greatest)
 
         decoded = self.grid_decode(reasoned)

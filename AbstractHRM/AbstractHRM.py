@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import sys
+sys.path.append("../")
 sys.path.append("../Szakdolgozat")
 from PatternReader import PatternReader, NodeValue
 import gc
@@ -84,8 +85,8 @@ class HRMNodeValue(NodeValue):
                 
             #lesser_value.value = block(x_lesser, x_greater)
 
-        #if pattern_reader.pattern_length > 2:
-        #    HRMNodeValue.delete_unusable(pattern_reader)
+        if pattern_reader.pattern_length > 2:
+            HRMNodeValue.delete_unusable(pattern_reader)
         
         index = min(1, len(node_list) - 1)
 
