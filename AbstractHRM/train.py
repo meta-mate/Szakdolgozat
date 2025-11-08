@@ -124,7 +124,7 @@ def train(
         augmented = LoadDataset.augment(tasks)
         batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
     
-        if (i_epoch + 1) % save_each:
+        if (i_epoch + 1) % save_each == 0:
             torch.save(arc_ahrm.state_dict(), script_directory + f"/saved/{save_name}_{i_epoch + 1}.pt")
             with open(script_directory + f'/saved/{save_name}_{i_epoch + 1}_epoch_losses.json', 'w') as f:
                 json.dump(epoch_losses, f)
@@ -140,8 +140,6 @@ if __name__ == "__main__":
     d_model = 512
     arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
     optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-4)
-    
-    batch_size = 2
 
     tasks = {}
     tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI/data/training"))
@@ -149,5 +147,13 @@ if __name__ == "__main__":
     #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/training"))
     #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/evaluation"))
 
-    train(cv2imshow, arc_ahrm, optimizer, tasks, batch_size, 2, 2, "arc_ahrm_t")
+    train(
+        draw_func=cv2imshow,
+        arc_ahrm=arc_ahrm,
+        optimizer=optimizer,
+        tasks=tasks,
+        batch_size=2,
+        epochs=2,
+        save_each=2,
+        save_name="arc_ahrm_t")
     cv2.destroyAllWindows()

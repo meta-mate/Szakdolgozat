@@ -2,7 +2,7 @@ import json
 import matplotlib.pyplot as plt
 
 
-with open('./AbstractHRM/saved/epoch_losses.json', "r") as f:
+with open('./AbstractHRM/saved/arc_ahrm_tete_50_epoch_losses.json', "r") as f:
     loss_datas = json.load(f)
 
 plt.plot(loss_datas)
