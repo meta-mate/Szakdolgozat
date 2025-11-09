@@ -29,7 +29,7 @@ if __name__ == "__main__":
     #d_model = 512 + 128 + 64
     print("d_model:", d_model)
     arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
-    arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/arc_ahrm_tete_50.pt"))
+    arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/pt/arc_ahrm_tete_lr1e-4_25.pt"))
     arc_ahrm.eval()
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     test_output = batchable_tasks["test"][:, 1]
 
     batch_index = random.randint(0, len(test_input))
-    batch_index = 492
+    #batch_index = 492
     print(batch_index)
     
     y = None

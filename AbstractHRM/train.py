@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from arc_ahrm import ArcAHRM
 from load_dataset import LoadDataset
 import os
@@ -28,6 +29,8 @@ def train(
 
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__, torch.cuda.is_available())
+
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
     
     keys = list(tasks.keys())
     random.shuffle(keys)
@@ -97,6 +100,8 @@ def train(
                             epoch_loss += loss.item()
 
                             print(loss, torch.cuda.memory_allocated() / 1024 / 1024)
+                            epoch_loss_avg = epoch_loss / ((done_amount) / batch_size + 1)
+                            print('epoch_loss_avg', epoch_loss_avg)
 
                             optimizer.zero_grad()
                             loss.backward()
@@ -115,7 +120,10 @@ def train(
                     if batch_size == 0:
                         break
         
+        epoch_loss /= len(test_input) / batch_size
         epoch_losses.append(epoch_loss)
+
+        scheduler.step(epoch_loss)
 
         keys = list(tasks.keys())
         random.shuffle(keys)
@@ -124,9 +132,9 @@ def train(
         augmented = LoadDataset.augment(tasks)
         batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
     
-        if (i_epoch + 1) % save_each == 0:
-            torch.save(arc_ahrm.state_dict(), script_directory + f"/saved/{save_name}_{i_epoch + 1}.pt")
-            with open(script_directory + f'/saved/{save_name}_{i_epoch + 1}_epoch_losses.json', 'w') as f:
+        if (i_epoch + 1) % save_each == 0 or i_epoch == 0:
+            torch.save(arc_ahrm.state_dict(), script_directory + f"/saved/pt/{save_name}_{i_epoch + 1}.pt")
+            with open(script_directory + f'/saved/json/{save_name}_{i_epoch + 1}_epoch_losses.json', 'w') as f:
                 json.dump(epoch_losses, f)
     if batch_size == 0:
         print("batch_size has become 0")
