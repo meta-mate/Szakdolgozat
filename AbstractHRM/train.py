@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from arc_ahrm import ArcAHRM
 from load_dataset import LoadDataset
 import os
@@ -30,7 +30,7 @@ def train(
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__, torch.cuda.is_available())
 
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
+    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=25, T_mult=2, eta_min=1e-5)
     
     keys = list(tasks.keys())
     random.shuffle(keys)
@@ -123,7 +123,7 @@ def train(
         epoch_loss /= len(test_input) / batch_size
         epoch_losses.append(epoch_loss)
 
-        scheduler.step(epoch_loss)
+        scheduler.step()
 
         keys = list(tasks.keys())
         random.shuffle(keys)
@@ -149,11 +149,18 @@ if __name__ == "__main__":
     arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
     optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-4)
 
+    directories = [
+        "/ARC-AGI/data/training",
+        #"/ARC-AGI/data/evaluation",
+        #"/ARC-AGI-2/data/training",
+        #"/ARC-AGI-2/data/evaluation"
+    ]
+
     tasks = {}
-    tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI/data/training"))
-    #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI/data/evaluation"))
-    #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/training"))
-    #tasks.update(LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/evaluation"))
+
+    for directory in directories:
+        new_tasks = LoadDataset.load_arc_tasks(script_directory + directory)
+        tasks.update(new_tasks)
 
     train(
         draw_func=cv2imshow,
