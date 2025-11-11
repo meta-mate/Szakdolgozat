@@ -123,7 +123,7 @@ def train(
         epoch_loss /= len(test_input) / batch_size
         epoch_losses.append(epoch_loss)
 
-        scheduler.step()
+        #scheduler.step()
 
         keys = list(tasks.keys())
         random.shuffle(keys)
@@ -147,12 +147,18 @@ if __name__ == "__main__":
     
     d_model = 512
     arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
-    optimizer = torch.optim.Adam(arc_ahrm.parameters(), lr=1e-4)
+    base_lr = 1e-3
+    optimizer = torch.optim.Adam([
+        {"params": arc_ahrm.ahrm.parameters(), "lr": base_lr / (286 - 13)},
+        {"params": arc_ahrm.grid_embed.parameters(), "lr": base_lr},
+        {"params": arc_ahrm.grid_combiner.parameters(), "lr": base_lr},
+        {"params": arc_ahrm.grid_decode.parameters(), "lr": base_lr / (286 - 13)}
+        ])
 
     directories = [
         "/ARC-AGI/data/training",
-        #"/ARC-AGI/data/evaluation",
-        #"/ARC-AGI-2/data/training",
+        "/ARC-AGI/data/evaluation",
+        "/ARC-AGI-2/data/training",
         #"/ARC-AGI-2/data/evaluation"
     ]
 
@@ -170,5 +176,5 @@ if __name__ == "__main__":
         batch_size=2,
         epochs=2,
         save_each=2,
-        save_name="arc_ahrm_t")
+        save_name="arc_ahrm_tet_reasonlr")
     cv2.destroyAllWindows()

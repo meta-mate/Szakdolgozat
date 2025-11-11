@@ -83,7 +83,7 @@ if True:
     pattern_reader = PatternReader()
 
     IntNodeValue.modulator = 2
-    length = 5
+    length = 13
     pattern_reader.interpretation(IntNodeValue(0))
     pattern_reader.calculate_values()
     for i in range(length - 1):
