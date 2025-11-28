@@ -14,7 +14,7 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__)
 
-    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC-AGI-2/data/training")
+    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC-AGI-2/data/evaluation")
     #augmented = LoadDataset.augment(tasks)
     #tasks.update(augmented)
     
@@ -29,8 +29,10 @@ if __name__ == "__main__":
     #d_model = 512 + 128 + 64
     print("d_model:", d_model)
     arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
-    arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/pt/arc_ahrm_tete_lr1e-4_25.pt"))
-    arc_ahrm.eval()
+    checkpoint = torch.load("AbstractHRM/saved/pt/arc_ahrm_tet_rec_1e-3_emb_1e-4_6000.pth")
+    #arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/pt/arc_ahrm_tet_reasonlr_1000.pt"))
+    arc_ahrm.load_state_dict(checkpoint["model_state_dict"])
+    #arc_ahrm.eval()
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
@@ -39,27 +41,39 @@ if __name__ == "__main__":
     test_output = batchable_tasks["test"][:, 1]
 
     batch_index = random.randint(0, len(test_input))
-    #batch_index = 492
+    #batch_index = 225
     print(batch_index)
     
     y = None
 
     for i in range(13):
-        with torch.no_grad():
+        if i < 13 - 1:
+            with torch.no_grad():
+                y = arc_ahrm(batchable_tasks["train"][batch_index:batch_index + 1], test_input[batch_index:batch_index + 1])
+        else:
             y = arc_ahrm(batchable_tasks["train"][batch_index:batch_index + 1], test_input[batch_index:batch_index + 1])
-            
-
-    arc_ahrm.ahrm.reset()
 
     y = F.softmax(y, dim=-1)
     prediction = torch.argmax(y, dim=-1)
 
+    square_size = 10
+
     images = []
-    images.append(Visualization.draw_grid(test_input[batch_index:batch_index + 1][0][0]))
-    images.append(Visualization.draw_grid(test_output[batch_index:batch_index + 1][0]))
-    images.append(Visualization.draw_grid(prediction[0]))
+    images.append(Visualization.draw_grid(test_input[batch_index:batch_index + 1][0][0], square_size))
+    images.append(Visualization.draw_grid(test_output[batch_index:batch_index + 1][0], square_size))
+    images.append(Visualization.draw_grid(prediction[0], square_size))
+    
+    #latent_value = arc_ahrm.ahrm.pattern_reader.node_list.nodeat(0).value.values.first.value.value
+    latent_value = arc_ahrm.combined
+    with torch.no_grad():
+        y = arc_ahrm.grid_decode(latent_value)
+        y = F.softmax(y, dim=-1)
+        latent_grid = torch.argmax(y, dim=-1)
+        images.append(Visualization.draw_grid(latent_grid[0], square_size))
 
     horizontal_concat = cv2.hconcat(images)
+
+    arc_ahrm.ahrm.reset()
     cv2.imshow('input-target-prediction', horizontal_concat)
 
     cv2.waitKey(0)

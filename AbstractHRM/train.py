@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from arc_ahrm import ArcAHRM
 from load_dataset import LoadDataset
 import os
+import math
 import random
 import time
 import json
@@ -15,11 +15,32 @@ from visualization import Visualization
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
 
+class MultiGroupCosineScheduler:
+    def __init__(self, optimizer, scalar, T_0, T_mult):
+        self.optimizer = optimizer
+        self.scalar = scalar
+        self.T_0 = T_0
+        self.T_mult = T_mult
+
+        self.initial_lrs = []
+        for param_group in self.optimizer.param_groups:
+            self.initial_lrs.append(param_group["lr"])
+
+    def step(self, t):
+        if t > 0 and t % self.T_0 == 0:
+            self.T_0 *= self.T_mult
+        for i, param_group in enumerate(self.optimizer.param_groups):
+            base_lr = self.initial_lrs[i]
+            min_lr = base_lr / self.scalar
+            T_0 = self.T_0
+            param_group["lr"] = min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * (t % T_0) / T_0))
+
 
 def train(
         draw_func,
         arc_ahrm,
         optimizer,
+        epoch_losses,
         tasks,
         batch_size,
         epochs,
@@ -30,7 +51,7 @@ def train(
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__, torch.cuda.is_available())
 
-    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=25, T_mult=2, eta_min=1e-5)
+    #scheduler = MultiGroupCosineScheduler(optimizer, scalar=2, T_0=50, T_mult=2)
     
     keys = list(tasks.keys())
     random.shuffle(keys)
@@ -44,7 +65,7 @@ def train(
     max_iterations = 13
     y = None
 
-    epoch_losses = []
+    already_done = len(epoch_losses)
     for i_epoch in range(epochs):
         
         test_input = batchable_tasks["test"][:, 0:1]
@@ -59,7 +80,7 @@ def train(
 
             while True:
                 try:
-                    print(i_epoch, "epoch", done_amount, "done from", len(batchable_tasks["train"]))
+                    print(i_epoch + already_done, "epoch", done_amount, "done from", len(batchable_tasks["train"]))
                     current_batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
                     end = done_amount + current_batch_size
                     
@@ -84,6 +105,16 @@ def train(
                             images.append(Visualization.draw_grid(test_input[done_amount + random_index][0]))
                             images.append(Visualization.draw_grid(target[random_index]))
                             images.append(Visualization.draw_grid(prediction[random_index]))
+
+                            #latent_value = arc_ahrm.ahrm.pattern_reader.node_list.nodeat(0).value.values.first.value.value
+                            latent_value = arc_ahrm.combined
+                            with torch.no_grad():
+                                y1 = arc_ahrm.grid_decode(latent_value)
+                                y1 = F.softmax(y1, dim=-1)
+                                latent_grid = torch.argmax(y1, dim=-1)
+                                images.append(Visualization.draw_grid(latent_grid[random_index]))
+
+                            horizontal_concat = cv2.hconcat(images)
 
                             horizontal_concat = cv2.hconcat(images)
                             
@@ -123,7 +154,7 @@ def train(
         epoch_loss /= len(test_input) / batch_size
         epoch_losses.append(epoch_loss)
 
-        #scheduler.step()
+        #scheduler.step(i_epoch)
 
         keys = list(tasks.keys())
         random.shuffle(keys)
@@ -132,9 +163,17 @@ def train(
         augmented = LoadDataset.augment(tasks)
         batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
     
-        if (i_epoch + 1) % save_each == 0 or i_epoch == 0:
-            torch.save(arc_ahrm.state_dict(), script_directory + f"/saved/pt/{save_name}_{i_epoch + 1}.pt")
-            with open(script_directory + f'/saved/json/{save_name}_{i_epoch + 1}_epoch_losses.json', 'w') as f:
+        if (i_epoch + 1) % save_each == 0:
+
+            checkpoint = {
+                'epoch': i_epoch,
+                'model_state_dict': arc_ahrm.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch_losses': epoch_losses
+            }
+        
+            torch.save(checkpoint, script_directory + f"/saved/pt/{save_name}_{i_epoch + 1 + already_done}.pth")
+            with open(script_directory + f'/saved/json/{save_name}_{i_epoch + 1 + already_done}_epoch_losses.json', 'w') as f:
                 json.dump(epoch_losses, f)
     if batch_size == 0:
         print("batch_size has become 0")
@@ -148,11 +187,14 @@ if __name__ == "__main__":
     d_model = 512
     arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
     base_lr = 1e-3
+    emb_lr = base_lr / 10 #/ (286 - 13)
+    rec_lr = base_lr
+    decoder_lr = emb_lr
     optimizer = torch.optim.Adam([
-        {"params": arc_ahrm.ahrm.parameters(), "lr": base_lr / (286 - 13)},
-        {"params": arc_ahrm.grid_embed.parameters(), "lr": base_lr},
-        {"params": arc_ahrm.grid_combiner.parameters(), "lr": base_lr},
-        {"params": arc_ahrm.grid_decode.parameters(), "lr": base_lr / (286 - 13)}
+        {"params": arc_ahrm.ahrm.parameters(), "lr": rec_lr},
+        {"params": arc_ahrm.grid_embed.parameters(), "lr": emb_lr},
+        {"params": arc_ahrm.grid_combiner.parameters(), "lr": emb_lr},
+        {"params": arc_ahrm.grid_decode.parameters(), "lr": decoder_lr}
         ])
 
     directories = [
@@ -162,6 +204,14 @@ if __name__ == "__main__":
         #"/ARC-AGI-2/data/evaluation"
     ]
 
+    epoch_losses = []
+    '''
+    checkpoint = torch.load(script_directory + "/saved/pt/arc_ahrm_tet_reasonlr_2350.pth")
+    arc_ahrm.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    epoch_losses = checkpoint["epoch_losses"]
+    '''
+    
     tasks = {}
 
     for directory in directories:
@@ -172,9 +222,10 @@ if __name__ == "__main__":
         draw_func=cv2imshow,
         arc_ahrm=arc_ahrm,
         optimizer=optimizer,
+        epoch_losses=epoch_losses,
         tasks=tasks,
         batch_size=2,
         epochs=2,
         save_each=2,
-        save_name="arc_ahrm_tet_reasonlr")
+        save_name="arc_ahrm_tet_slc")
     cv2.destroyAllWindows()

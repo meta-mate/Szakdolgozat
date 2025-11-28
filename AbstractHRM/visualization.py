@@ -29,13 +29,14 @@ class Visualization():
 
         for i in range(y):
             for j in range(x):
+                index = grid[i][j]
+                if index == 0:
+                    continue
                 start = (j * square_size, i * square_size)
                 end = tuple(s + square_size for s in start)
-                index = grid[i][j]
                 color = color_list[index]
                 cv2.rectangle(img, start, end, color, -1)
-                if index != 0:
-                    cv2.rectangle(img, start, end, (127,127,127), 2)
+                cv2.rectangle(img, start, end, (127,127,127), 2)
 
         cv2.rectangle(img, (0, 0), (y * square_size, x * square_size), (255, 255, 255), 2)
 

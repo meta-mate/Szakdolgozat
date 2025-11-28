@@ -27,7 +27,7 @@ class LoadDataset:
         result = grid.copy()
 
         for i in range(10):
-            result[result == i] += color_map[i] - i
+            result[grid == i] += color_map[i] - i
 
         return result
 
@@ -88,9 +88,9 @@ class LoadDataset:
 
         for task_id in tasks:
             
-            color_map = [i for i in range(2, 10)]
+            color_map = [i for i in range(1, 10)]
             random.shuffle(color_map)
-            color_map = [0, 1] + color_map
+            color_map = [0] + color_map
             color_map = np.array(color_map)
             
             rotate_amount = random.randint(0, 3)
@@ -99,7 +99,7 @@ class LoadDataset:
             result_id = task_id
             result_id += "_" + str(rotate_amount) + "_" + str(flip_axis) + "_"
 
-            for i in range(2, len(color_map)):
+            for i in range(1, len(color_map)):
                 result_id += str(color_map[i])
 
             augmentations[result_id] = {}
