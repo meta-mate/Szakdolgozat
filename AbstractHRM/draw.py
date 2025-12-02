@@ -14,7 +14,7 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__)
 
-    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC-AGI-2/data/evaluation")
+    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC-AGI-2/data/training")
     #augmented = LoadDataset.augment(tasks)
     #tasks.update(augmented)
     
@@ -63,17 +63,46 @@ if __name__ == "__main__":
     images.append(Visualization.draw_grid(test_output[batch_index:batch_index + 1][0], square_size))
     images.append(Visualization.draw_grid(prediction[0], square_size))
     
-    #latent_value = arc_ahrm.ahrm.pattern_reader.node_list.nodeat(0).value.values.first.value.value
-    latent_value = arc_ahrm.combined
-    with torch.no_grad():
-        y = arc_ahrm.grid_decode(latent_value)
-        y = F.softmax(y, dim=-1)
-        latent_grid = torch.argmax(y, dim=-1)
-        images.append(Visualization.draw_grid(latent_grid[0], square_size))
+    i = 0
+    j = 0
 
-    horizontal_concat = cv2.hconcat(images)
+    while True:
+        node_list = arc_ahrm.ahrm.pattern_reader.node_list
+        latent_value = node_list.nodeat(i).value.values.nodeat(j).value.value
+        #latent_value = arc_ahrm.combined
+        
+        print(i, j, "Name:", node_list.nodeat(i).value.name)
+        
+        with torch.no_grad():
+            y = arc_ahrm.grid_decode(latent_value)
+            y = F.softmax(y, dim=-1)
+            latent_grid = torch.argmax(y, dim=-1)
+            latent_image = Visualization.draw_grid(latent_grid[0], square_size)
+
+            horizontal_concat = cv2.hconcat(images + [latent_image])
+
+            cv2.imshow('input-target-prediction', horizontal_concat)
+
+        key = cv2.waitKey(0)
+
+        if key == ord("q"):
+            break
+
+        if key == ord("w"):
+            if i < len(node_list) - 1:
+                i += 1
+            j = min(j, len(node_list.nodeat(i).value.values) - 1)
+        if key == ord("s"):
+            if i > 0:
+                i -= 1
+            j = min(j, len(node_list.nodeat(i).value.values) - 1)
+        if key == ord("d"):
+            if j < len(node_list.nodeat(i).value.values) - 1:
+                j += 1
+        if key == ord("a"):
+            if j > 0:
+                j -= 1
+        
 
     arc_ahrm.ahrm.reset()
-    cv2.imshow('input-target-prediction', horizontal_concat)
-
-    cv2.waitKey(0)
+    cv2.destroyAllWindows()

@@ -51,7 +51,7 @@ def train(
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__, torch.cuda.is_available())
 
-    #scheduler = MultiGroupCosineScheduler(optimizer, scalar=2, T_0=50, T_mult=2)
+    scheduler = MultiGroupCosineScheduler(optimizer, scalar=10, T_0=25, T_mult=1)
     
     keys = list(tasks.keys())
     random.shuffle(keys)
@@ -105,7 +105,7 @@ def train(
                             images.append(Visualization.draw_grid(test_input[done_amount + random_index][0]))
                             images.append(Visualization.draw_grid(target[random_index]))
                             images.append(Visualization.draw_grid(prediction[random_index]))
-
+                            
                             #latent_value = arc_ahrm.ahrm.pattern_reader.node_list.nodeat(0).value.values.first.value.value
                             latent_value = arc_ahrm.combined
                             with torch.no_grad():
@@ -113,8 +113,6 @@ def train(
                                 y1 = F.softmax(y1, dim=-1)
                                 latent_grid = torch.argmax(y1, dim=-1)
                                 images.append(Visualization.draw_grid(latent_grid[random_index]))
-
-                            horizontal_concat = cv2.hconcat(images)
 
                             horizontal_concat = cv2.hconcat(images)
                             
@@ -128,10 +126,10 @@ def train(
                                 target
                             )
 
-                            epoch_loss += loss.item()
+                            epoch_loss += loss.item() * current_batch_size
 
                             print(loss, torch.cuda.memory_allocated() / 1024 / 1024)
-                            epoch_loss_avg = epoch_loss / ((done_amount) / batch_size + 1)
+                            epoch_loss_avg = epoch_loss / (done_amount + current_batch_size)
                             print('epoch_loss_avg', epoch_loss_avg)
 
                             optimizer.zero_grad()
@@ -151,7 +149,7 @@ def train(
                     if batch_size == 0:
                         break
         
-        epoch_loss /= len(test_input) / batch_size
+        epoch_loss /= len(test_input)
         epoch_losses.append(epoch_loss)
 
         #scheduler.step(i_epoch)
@@ -182,6 +180,7 @@ def cv2imshow(img):
     cv2.imshow('input-target-prediction', img)
     cv2.waitKey(1)
 
+
 if __name__ == "__main__":
     
     d_model = 512
@@ -189,13 +188,22 @@ if __name__ == "__main__":
     base_lr = 1e-3
     emb_lr = base_lr / 10 #/ (286 - 13)
     rec_lr = base_lr
-    decoder_lr = emb_lr
+    dec_lr = emb_lr
     optimizer = torch.optim.Adam([
         {"params": arc_ahrm.ahrm.parameters(), "lr": rec_lr},
         {"params": arc_ahrm.grid_embed.parameters(), "lr": emb_lr},
         {"params": arc_ahrm.grid_combiner.parameters(), "lr": emb_lr},
-        {"params": arc_ahrm.grid_decode.parameters(), "lr": decoder_lr}
+        {"params": arc_ahrm.grid_decode.parameters(), "lr": dec_lr}
         ])
+
+    epoch_losses = []
+
+    '''
+    checkpoint = torch.load("./saved/pt/arc_ahrm_tet_rec_1e-3_emb_1e-4_4675.pth")
+    arc_ahrm.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    epoch_losses = checkpoint["epoch_losses"]
+    '''
 
     directories = [
         "/ARC-AGI/data/training",
@@ -204,20 +212,23 @@ if __name__ == "__main__":
         #"/ARC-AGI-2/data/evaluation"
     ]
 
-    epoch_losses = []
-    '''
-    checkpoint = torch.load(script_directory + "/saved/pt/arc_ahrm_tet_reasonlr_2350.pth")
-    arc_ahrm.load_state_dict(checkpoint["model_state_dict"])
-    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-    epoch_losses = checkpoint["epoch_losses"]
-    '''
-    
+    name = "arc_ahrm"
+    name += "_"
+
+    for directory in directories:
+        name += directory.split("/")[-1][0]
+
+    name += "_rec_" + f"{rec_lr:.0e}" + "_emb_" + f"{emb_lr:.0e}"
+    name = name.replace('e+0', 'e+').replace('e-0', 'e-')
+
+    print(name)
+
     tasks = {}
 
     for directory in directories:
         new_tasks = LoadDataset.load_arc_tasks(script_directory + directory)
         tasks.update(new_tasks)
-
+    
     train(
         draw_func=cv2imshow,
         arc_ahrm=arc_ahrm,
@@ -225,7 +236,8 @@ if __name__ == "__main__":
         epoch_losses=epoch_losses,
         tasks=tasks,
         batch_size=2,
-        epochs=2,
-        save_each=2,
-        save_name="arc_ahrm_tet_slc")
+        epochs=3000,
+        save_each=25,
+        save_name=name
+        )
     cv2.destroyAllWindows()

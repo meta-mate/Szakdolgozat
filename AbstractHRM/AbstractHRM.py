@@ -85,7 +85,7 @@ class HRMNodeValue(NodeValue):
                 
             #lesser_value.value = block(x_lesser, x_greater)
 
-        if pattern_reader.pattern_length > 2:
+        if pattern_reader.pattern_length > 2 and False:
             HRMNodeValue.delete_unusable(pattern_reader)
         
         index = min(1, len(node_list) - 1)
@@ -106,11 +106,5 @@ class AbstractHRM(nn.Module):
         torch.cuda.empty_cache()
 
     def forward(self, x_lowest, x_greatest):
-        '''
-        The stopping logic should take into account:
-         - the loss, or the non-ambiguity of the output, and its convergence
-         - by how much the next steps computation will grow (n * n / 3)
-         - the number of new name types, that indicate unique vantage points
-        '''
         return HRMNodeValue.step(self.pattern_reader, self.block, x_lowest, x_greatest)
 

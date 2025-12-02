@@ -34,10 +34,10 @@ class IntNodeValue(NodeValue):
         result += IntNodeValue.modulator
         result %= IntNodeValue.modulator
 
-        #self.value = lesser_values.nodeat(n + 1).value
+        self.value = lesser_values.nodeat(n + 1).value.value
         #self.value = random_chars()
         #result = 0
-        self.value = result
+        #self.value = result
 
     def predict(pattern_reader):
         result = None
@@ -79,7 +79,7 @@ class IntNodeValue(NodeValue):
         return last_change
 
 
-if True:
+if False:
     pattern_reader = PatternReader()
 
     IntNodeValue.modulator = 2
