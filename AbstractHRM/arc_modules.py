@@ -4,15 +4,15 @@ import torch.nn.functional as F
 import time
 
 class ReasoningBlock(nn.Module):
-    def __init__(self, d_model, n_heads=4, dropout=0.1):
+    def __init__(self, d_model, n_heads=4, dropout=0.1, option=0):
         super().__init__()
         self.d_model = d_model
         
-        self.self_attn_lesser = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
-        self.self_attn_greater = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
+        #self.self_attn_lesser = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
+        #self.self_attn_greater = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
 
         self.cross_attn_lesser_to_greater = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
-        self.cross_attn_greater_to_lesser = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
+        #self.cross_attn_greater_to_lesser = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
 
         self.ff = nn.Sequential(
             nn.Linear(d_model, 4 * d_model),
@@ -20,34 +20,52 @@ class ReasoningBlock(nn.Module):
             nn.Linear(4 * d_model, d_model)
         )
 
-        self.norm1 = nn.LayerNorm(d_model)
+        #self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x_lesser, x_greater):
+        self.calls = 0
+        self.time = 0
+
+        self.option = option
+
+    def forward(self, x_lesser, x_greater, x_previous = None):
         start_time = time.perf_counter()
+        
+        self.calls += 1
         
         B, H, W, D = x_lesser.shape
         x_lesser = x_lesser.view(B, H * W, D)
-        x_greater = x_greater.view(B, H * W, D)
+        x_greater = x_greater.view(B, -1, D)
+        if self.option != 0:
+            x_greater = x_greater + x_lesser
+            if x_previous is not None:
+                x_greater = x_greater + x_previous.view(B, -1, D)
+            x_lesser = x_greater
+        elif x_previous is not None:
+            x_lesser = x_lesser + x_previous.view(B, -1, D)
+            x_greater = x_greater + x_previous.view(B, -1, D)
+        
+        #lesser_sa, _ = self.self_attn_lesser(x_lesser, x_lesser, x_lesser)
+        #greater_sa, _ = self.self_attn_greater(x_greater, x_greater, x_greater)
 
-        lesser_sa, _ = self.self_attn_lesser(x_lesser, x_lesser, x_lesser)
-        greater_sa, _ = self.self_attn_greater(x_greater, x_greater, x_greater)
-
-        x_lesser = self.norm1(x_lesser + self.dropout(lesser_sa))
-        x_greater = self.norm1(x_greater + self.dropout(greater_sa))
+        #x_lesser = self.norm1(x_lesser + self.dropout(lesser_sa))
+        #x_greater = self.norm1(x_greater + self.dropout(greater_sa))
 
         lesser_ca, _ = self.cross_attn_lesser_to_greater(x_lesser, x_greater, x_greater)
-        greater_ca, _ = self.cross_attn_greater_to_lesser(x_greater, x_lesser, x_lesser)
+        #greater_ca, _ = self.cross_attn_greater_to_lesser(x_greater, x_lesser, x_lesser)
 
         x_lesser = self.norm2(x_lesser + self.dropout(lesser_ca))
-        x_greater = self.norm2(x_greater + self.dropout(greater_ca))
+        #x_greater = self.norm2(x_greater + self.dropout(greater_ca))
 
-        combined = (x_lesser + x_greater) / 2
+        #combined = (x_lesser + x_greater) / 2
+        combined = x_lesser
         combined = self.norm3(combined + self.dropout(self.ff(combined)))
 
         combined = combined.view(B, H, W, D)
+
+        self.time += time.perf_counter() - start_time
 
         #print("reasoning_block", time.perf_counter() - start_time)
         # Reshape back to grid form
@@ -132,15 +150,38 @@ class GridCombiner(nn.Module):
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, example_grids, test_input_grid):
+        self.grid_embed = GridEmbed(d_model)
+        self.test_embedded = None
+
+    def forward(self, train_examples, test_input):
         start_time = time.perf_counter()   
-        B, N, H, W, D = example_grids.shape
 
-        context = example_grids.view(B, N * H * W, D)
-        #context = example_grids.mean(dim=1).view(B, H * W, D)
-        query = test_input_grid.view(B, H * W, D)
+        train_embedded = self.grid_embed(train_examples)
+        test_embedded = self.grid_embed(test_input)
+        
+        B, N, H, W, D = train_embedded.shape
+        device = train_embedded.device
 
-        attended, _ = self.attn(query, context, context)
+        self.test_embedded = test_embedded.view(B, H, W, D)
+
+        ones_like = torch.ones_like(train_examples, device=device)
+        zeros_like = torch.zeros_like(train_examples, device=device)
+        zeros = torch.zeros_like(test_input[0][0], device=device)
+        
+        condition = []
+        for batch in train_examples:
+            condition.append([])
+            for train_example in batch:
+                condition[-1].append(train_example.equal(zeros))
+
+        condition = torch.tensor(condition, device=device)
+        key_padding_mask = torch.where(condition.view(B, N, 1, 1), ones_like, zeros_like)
+        key_padding_mask = key_padding_mask.bool().view(B, N * H * W)
+
+        context = train_embedded.view(B, N * H * W, D)
+        query = test_embedded.view(B, H * W, D)
+
+        attended, _ = self.attn(query, context, context, key_padding_mask=key_padding_mask)
         
         x = self.norm1(query + self.dropout(attended))
         x = self.norm2(x + self.dropout(self.ff(x)))

@@ -18,20 +18,29 @@ values = np.array(values) / base_lr
 
 #plt.plot(values, color="red")
 
-file_names = {
-    "arc_ahrm_tet_reasonlr_2350_epoch_losses": "blue",
-    "arc_ahrm_tet_rec_1e-3_emb_1e-4_6000_epoch_losses": "pink",
-    #"arc_ahrm_tet_reasonlr_slc_lr1e-3_750_epoch_losses": "orange",
-    #"arc_ahrm_tet_slc_1e-1_75_epoch_losses": "purple",
-    #"arc_ahrm_tet_slc_1e1_75_epoch_losses": "green",
-    #"arc_ahrm_tete_50_epoch_losses": "orange",
-    #"arc_ahrm_tete_25_lr1e-3_wd1e-2_epoch_losses": "green"
+files = {
+    "arc_Transformer_e_rec_1e-3_emb_5e-5_100_epoch_losses": {"color": "blue", "time": 1, "label": "Transformer"},
+    "arc_AbstractHRM_e_rec_1e-3_emb_5e-5_100_epoch_losses": {"color": "orange", "time": 1, "label": "AbstractHRM"},
+    "arc_TRM_e_rec_1e-3_emb_5e-5_100_epoch_losses": {"color": "green", "time": 1, "label": "TRM"}
 }
 
-for file_name in file_names:
-    loss_datas = []
-    with open(f'./AbstractHRM/saved/json/{file_name}.json', "r") as f:
-        loss_datas = np.array(json.load(f))
-    plt.plot(loss_datas, color=file_names[file_name])
+name1 = "Transformer"
+name2 = "TRM_regular"
 
+files_ = {
+    f"{name1}_learning_{name2}_losses": {"color": "blue", "time": 1, "label": "AbstractHRM"},
+    f"{name2}_learning_{name1}_losses": {"color": "orange", "time": 1, "label": "Transformer"},
+}
+
+for file in files:
+    loss_datas = []
+    with open(f'./AbstractHRM/saved/json/{file}.json', "r") as f:
+        loss_datas = np.array(json.load(f))
+    x_values = np.arange(len(loss_datas)) * files[file]["time"]
+    mean = [loss_datas[:i+1].mean() for i in range(len(loss_datas))]
+    label = files[file]["label"]
+    #label = file.split("_")[0]
+    plt.plot(x_values, loss_datas, color=files[file]["color"], label=label)
+
+plt.legend(loc="upper right")
 plt.show()

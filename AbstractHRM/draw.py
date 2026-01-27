@@ -14,7 +14,7 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
     print(torch.__version__)
 
-    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC-AGI-2/data/training")
+    tasks = LoadDataset.load_arc_tasks("AbstractHRM/ARC-AGI-2/data/evaluation")
     #augmented = LoadDataset.augment(tasks)
     #tasks.update(augmented)
     
@@ -40,8 +40,8 @@ if __name__ == "__main__":
     test_input = batchable_tasks["test"][:, 0:1]
     test_output = batchable_tasks["test"][:, 1]
 
-    batch_index = random.randint(0, len(test_input))
-    #batch_index = 225
+    batch_index = random.randint(0, len(test_input) - 1)
+    #batch_index = 67
     print(batch_index)
     
     y = None
@@ -55,6 +55,15 @@ if __name__ == "__main__":
 
     y = F.softmax(y, dim=-1)
     prediction = torch.argmax(y, dim=-1)
+    
+    print(torch.cuda.memory_allocated() / 1024**2, "memory allocated")
+
+    match_count = 0
+    for i in range(len(prediction[0])):
+        for j in range(len(prediction[0][i])):
+            if prediction[0][i][j] != test_output[batch_index:batch_index + 1][0][i][j]:
+                match_count += 1
+    print(match_count, match_count / 30**2)
 
     square_size = 10
 
