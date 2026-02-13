@@ -1,10 +1,62 @@
 import os
 import json
+import csv
 import numpy as np
 import random
 import torch
 
 class LoadDataset:
+
+    def load_sudoku(path):
+        with open(path, "r") as f:
+            csv_reader = csv.reader(f)
+            tasks = list(csv_reader)
+        
+        result = []
+        for i_task, task in enumerate(tasks):
+            if i_task == 0:
+                continue
+            
+            result.append([])
+            for io in range(2):
+                result[-1].append([])
+                task_str = task[1 + io]
+                task_str = task_str.replace(".", "0")
+                for i in range(9):
+                    result[-1][-1].append([])
+                    for j in range(9):
+                        result[-1][-1][-1].append(int(task_str[i * 9 + j]))
+
+        result = np.array(result)
+        return result
+    
+    def shuffle_sudoku(tasks):
+        
+        for i in range(len(tasks)):
+            digit_map = np.pad(np.random.permutation(np.arange(1, 10)), (1, 0))
+            
+            transpose_flag = np.random.rand() < 0.5
+
+            bands = np.random.permutation(3)
+            row_perm = np.concatenate([b * 3 + np.random.permutation(3) for b in bands])
+
+            stacks = np.random.permutation(3)
+            col_perm = np.concatenate([s * 3 + np.random.permutation(3) for s in stacks])
+
+            mapping = np.array([row_perm[i // 9] * 9 + col_perm[i % 9] for i in range(81)])
+
+            def apply_transformation(x):
+                if transpose_flag:
+                    x = x.T
+                new_board = x.flatten()[mapping].reshape(9, 9).copy()
+                return digit_map[new_board]
+            
+            for j in range(2):
+                tasks[i][j] = apply_transformation(tasks[i][j])
+                continue
+
+        return tasks
+
     def load_arc_tasks(data_dir):
         tasks = {}
         for fname in os.listdir(data_dir):

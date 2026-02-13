@@ -171,6 +171,7 @@ def compete(
                     target = test_output[start:end].to(torch.long)
 
                     x_test = torch.randint_like(x_test, 0, 10)
+                    x_train = torch.randint_like(x_train, 0, 10)
                     
                     random_index = random.randint(0, current_batch_size - 1)
 
@@ -179,14 +180,14 @@ def compete(
                         for i in range(max_iterations):
                             should_grad1 = True
                             should_grad2 = True
-                            if i < 0 or (i < 1 and model1.ahrm.block.option == 0):
+                            if i < 0: # or (i < 1 and model1.ahrm.block.option == 0):
                                 with torch.no_grad():
                                     y1 = model1(x_train, x_test)
                                 should_grad1 = False
                             else:
                                 y1 = model1(x_train, x_test)
 
-                            if i < 0 or (i < 1 and model2.ahrm.block.option == 0):
+                            if i < 0: # or (i < 1 and model2.ahrm.block.option == 0):
                                 with torch.no_grad():
                                     y2 = model2(x_train, x_test)
                                 should_grad2 = False
@@ -202,20 +203,26 @@ def compete(
                             prediction2 = torch.argmax(F.softmax(y2, dim=-1), dim=-1).to(torch.long)
                             
                             images = []
-                            square_size = 12
+                            square_size = 10
                             
                             images.append(Visualization.draw_grid(x_test[random_index][0], square_size))
                             images.append(Visualization.draw_grid(prediction1[random_index], square_size))
                             images.append(Visualization.draw_grid(prediction2[random_index], square_size))
-                            '''
+                            
                             #latent_value = arc_ahrm.ahrm.pattern_reader.node_list.nodeat(0).value.values.first.value.value
-                            latent_value = arc_ahrm.combined
+                            latent_value = model1.combined
                             with torch.no_grad():
-                                y1_latent = arc_ahrm.grid_decode(latent_value)
+                                y1_latent = model1.grid_decode(latent_value)
                                 y1_latent = F.softmax(y1_latent, dim=-1)
                                 latent_grid = torch.argmax(y1_latent, dim=-1)
                                 images.append(Visualization.draw_grid(latent_grid[random_index], square_size))
-                            '''
+                            
+                            latent_value = model2.combined
+                            with torch.no_grad():
+                                y2_latent = model2.grid_decode(latent_value)
+                                y2_latent = F.softmax(y2_latent, dim=-1)
+                                latent_grid = torch.argmax(y2_latent, dim=-1)
+                                images.append(Visualization.draw_grid(latent_grid[random_index], square_size))
                             
                             horizontal_concat = cv2.hconcat(images)
                             
@@ -328,8 +335,8 @@ def cv2imshow(img, name):
 def start(draw_func=cv2imshow):
     
     d_model = 512
-    model1 = Model(d_model, option=0).to("cuda").to(torch.bfloat16)
-    model2 = Model(d_model, option=1).to("cuda").to(torch.bfloat16)
+    model1 = ArcAHRM(d_model, option=1).to("cuda").to(torch.bfloat16)
+    model2 = ArcAHRM(d_model, option=3).to("cuda").to(torch.bfloat16)
     
     base_lr = 1e-3 / 5
     emb_lr = base_lr / 20 #/ (286 - 13)
@@ -338,15 +345,15 @@ def start(draw_func=cv2imshow):
     
     optimizer1 = torch.optim.Adam([
         {"params": model1.ahrm.parameters(), "lr": rec_lr},
-        {"params": model1.grid_embed.parameters(), "lr": emb_lr},
-        #{"params": model1.grid_combiner.parameters(), "lr": emb_lr},
+        #{"params": model1.grid_embed.parameters(), "lr": emb_lr},
+        {"params": model1.grid_combiner.parameters(), "lr": emb_lr},
         {"params": model1.grid_decode.parameters(), "lr": dec_lr}
         ])
     
     optimizer2 = torch.optim.Adam([
         {"params": model2.ahrm.parameters(), "lr": rec_lr},
-        {"params": model2.grid_embed.parameters(), "lr": emb_lr},
-        #{"params": model2.grid_combiner.parameters(), "lr": emb_lr},
+        #{"params": model2.grid_embed.parameters(), "lr": emb_lr},
+        {"params": model2.grid_combiner.parameters(), "lr": emb_lr},
         {"params": model2.grid_decode.parameters(), "lr": dec_lr}
         ])
 

@@ -38,7 +38,7 @@ class ReasoningBlock(nn.Module):
         B, H, W, D = x_lesser.shape
         x_lesser = x_lesser.view(B, H * W, D)
         x_greater = x_greater.view(B, -1, D)
-        if self.option != 0:
+        if self.option == 1 or self.option == 3:
             x_greater = x_greater + x_lesser
             if x_previous is not None:
                 x_greater = x_greater + x_previous.view(B, -1, D)
@@ -68,7 +68,6 @@ class ReasoningBlock(nn.Module):
         self.time += time.perf_counter() - start_time
 
         #print("reasoning_block", time.perf_counter() - start_time)
-        # Reshape back to grid form
         return combined
 
 
@@ -81,7 +80,7 @@ class GridEmbed(nn.Module):
         self.row_embed = nn.Embedding(H, d_model)
         self.col_embed = nn.Embedding(W, d_model)
         self.example_embed = nn.Embedding(num_examples, d_model)
-        self.role_embed = nn.Embedding(2, d_model)  # 0 = input, 1 = output
+        self.role_embed = nn.Embedding(2, d_model)
         
     def forward(self, grids):
         start_time = time.perf_counter()
@@ -96,13 +95,11 @@ class GridEmbed(nn.Module):
         row_emb = self.row_embed(rows).view(1, 1, H, 1, D)
         col_emb = self.col_embed(cols).view(1, 1, 1, W, D)
         
-        # Example (pair) encodings: [0,0,1,1,2,2,...]
         example_ids = torch.tensor([0], device=device)
         if N > 1:
             example_ids = torch.arange(N, device=device) // 2 + 1
         example_emb = self.example_embed(example_ids).view(1, N, 1, 1, D)
         
-        # Role encodings: [0,1,0,1,0,1,...]
         role_ids = torch.tensor([0], device=device)
         if N > 1:
             role_ids = torch.arange(N, device=device) % 2
@@ -118,7 +115,7 @@ class GridEmbed(nn.Module):
 
         #print("grid_embed", time.perf_counter() - start_time, grids.shape)
         
-        return emb  # shape: (B, N, H, W, d_model)
+        return emb
 
 
 class GridDecode(nn.Module):

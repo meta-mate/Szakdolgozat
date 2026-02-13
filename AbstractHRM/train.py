@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from arc_ahrm import ArcAHRM
+from AbstractHRM import HRMNodeValue
 from load_dataset import LoadDataset
 import os
 import math
@@ -42,12 +43,19 @@ class MultiGroupCosineScheduler:
                 param_group["lr"] = min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * progress))
 
 
+def calculate_accuracy(prediction, target):
+    misses = torch.where(prediction != target, 1, 0).sum(dim=(1, 2))
+    non_pads = torch.where(target != 0, 1, 0).sum(dim=(1, 2))
+
+    result = 1 - (misses / non_pads).mean()
+    return result.item()
+
 
 def train(
         draw_func,
         arc_ahrm,
         optimizer,
-        epoch_losses,
+        metrics,
         tasks,
         eval_tasks,
         batch_size,
@@ -62,11 +70,18 @@ def train(
     warmup_steps = 5
     scheduler = MultiGroupCosineScheduler(optimizer, scalar=5, T_0=100-warmup_steps, T_mult=1, warmup_steps=warmup_steps)
     
-    keys = list(tasks.keys())
-    random.shuffle(keys)
-    tasks = {key: tasks[key] for key in keys}
+    if arc_ahrm.uses_combiner:
+        keys = list(tasks.keys())
+        random.shuffle(keys)
+        #tasks = {key: tasks[key] for key in keys}
+    else:
+        #np.random.shuffle(tasks)
+        augmented = tasks #LoadDataset.shuffle_sudoku(tasks)
 
-    batchable_tasks =  LoadDataset.tasks_to_batchable(tasks)
+    if arc_ahrm.uses_combiner:
+        batchable_tasks = LoadDataset.tasks_to_batchable(tasks)
+    else:
+        batchable_tasks = torch.from_numpy(augmented).to('cuda')
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
@@ -76,24 +91,32 @@ def train(
     
     total_start_time = time.perf_counter()
 
-    eval_epoch_losses = []
+    eval_metrics = {"loss": [], "accuracy": []}
 
-    already_done = len(epoch_losses)
+    already_done = len(metrics["loss"])
     for i_epoch in range(epochs):
-        
-        test_input = batchable_tasks["test"][:, 0:1]
-        test_output = batchable_tasks["test"][:, 1]
+
+        batchable_length = 0
+        if arc_ahrm.uses_combiner:
+            test_input = batchable_tasks["test"][:, 0:1]
+            test_output = batchable_tasks["test"][:, 1]
+            batchable_length = len(batchable_tasks["train"])
+        else:
+            test_input = batchable_tasks[:, 0:1]
+            test_output = batchable_tasks[:, 1]
+            batchable_length = len(batchable_tasks)
         
         done_amount = 0
-        epoch_loss = []
-        while done_amount < len(batchable_tasks["train"]):
+        losses = []
+        accuracies = []
+        while done_amount < batchable_length:
 
             if batch_size == 0:
                 break
 
             while True:
                 try:
-                    print(i_epoch + already_done, "epoch", done_amount, "done from", len(batchable_tasks["train"]))
+                    print(i_epoch + already_done, "epoch", done_amount, "done from", batchable_length)
                     '''
                     current_batch_size = batch_size
                     max_size = batch_size * 10
@@ -127,11 +150,14 @@ def train(
                     
                     current_batch_size = len(current_batch["train"])
                     '''
-                    current_batch_size = min(batch_size, len(batchable_tasks["train"]) - done_amount)
+                    current_batch_size = min(batch_size, batchable_length - done_amount)
                     start = done_amount
                     end = start + current_batch_size
                     
-                    x_train = batchable_tasks["train"][start:end]
+                    x_train = None
+                    if arc_ahrm.uses_combiner:
+                        x_train = batchable_tasks["train"][start:end]
+
                     x_test = test_input[start:end]
                     target = test_output[start:end].to(torch.long)
                     
@@ -140,7 +166,7 @@ def train(
                     for inner_epoch in range(1):
                         start_time = time.perf_counter()
                         for i in range(max_iterations):
-                            if i < max_iterations - 1: #0 or (i < 1 and arc_ahrm.ahrm.block.option == 0):
+                            if i < 0 or (i < 1 and arc_ahrm.ahrm.block.option == 0):
                                 with torch.no_grad():
                                     y = arc_ahrm(x_train, x_test)
                                 continue
@@ -150,7 +176,7 @@ def train(
                             prediction = torch.argmax(F.softmax(y, dim=-1), dim=-1)
 
                             images = []
-                            square_size = 12
+                            square_size = 10
                             
                             images.append(Visualization.draw_grid(x_test[random_index][0], square_size))
                             images.append(Visualization.draw_grid(target[random_index], square_size))
@@ -158,7 +184,7 @@ def train(
                             
                             #latent_value = arc_ahrm.ahrm.pattern_reader.node_list.nodeat(0).value.values.first.value.value
                             latent_value = arc_ahrm.combined
-                            with torch.no_grad():
+                            if arc_ahrm.uses_combiner:
                                 y1 = arc_ahrm.grid_decode(latent_value)
                                 y1 = F.softmax(y1, dim=-1)
                                 latent_grid = torch.argmax(y1, dim=-1)
@@ -170,19 +196,24 @@ def train(
                                 images.append(Visualization.draw_grid(latent_grid[random_index], square_size))
                             horizontal_concat = cv2.hconcat(images)
                             
-                            draw_func(horizontal_concat)
+                            #draw_func(horizontal_concat)
 
                             loss = F.cross_entropy(
                                 y.permute(0, 3, 1, 2),
                                 target
                             )
 
+                            accuracy = calculate_accuracy(prediction, target)
+
                             print(save_name, loss, torch.cuda.memory_allocated() / 1024 / 1024)
-                            
+                            print("accuracy", accuracy)
+
                             if i == max_iterations - 1:
-                                #draw_func(horizontal_concat)
-                                epoch_loss.append(loss.item())
-                                print('epoch_loss_avg', np.mean(epoch_loss))
+                                draw_func(horizontal_concat)
+                                losses.append(loss.item())
+                                accuracies.append(accuracy)
+                                print('losses_avg', np.mean(losses))
+                                print("accuracy_avg", np.mean(accuracies))
 
                             if torch.is_grad_enabled():
                                 optimizer.zero_grad()
@@ -204,17 +235,23 @@ def train(
                     if batch_size == 0:
                         break
         
-        epoch_losses.append(np.mean(epoch_loss))
-        epoch_loss.clear()
+        metrics["loss"].append(np.mean(losses))
+        metrics["accuracy"].append(np.mean(accuracies))
+        losses.clear()
+        accuracies.clear()
         
         #scheduler.step(i_epoch + already_done)
 
-        keys = list(tasks.keys())
-        random.shuffle(keys)
-        tasks = {key: tasks[key] for key in keys}
-
-        augmented = LoadDataset.augment(tasks)
-        batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
+        if arc_ahrm.uses_combiner:
+            keys = list(tasks.keys())
+            random.shuffle(keys)
+            tasks = {key: tasks[key] for key in keys}
+            augmented = LoadDataset.augment(tasks)
+            batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
+        else:
+            np.random.shuffle(tasks)
+            augmented = LoadDataset.shuffle_sudoku(tasks)
+            batchable_tasks = torch.from_numpy(augmented).to('cuda')
     
         if (i_epoch + 1 + already_done) % save_each == 0:
 
@@ -222,13 +259,13 @@ def train(
                 'epoch': i_epoch,
                 'model_state_dict': arc_ahrm.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'epoch_losses': epoch_losses
+                'metrics': metrics
             }
 
-            if eval_tasks is not None:
+            if epochs > 1:
                 torch.save(checkpoint, script_directory + f"/saved/pt/{save_name}_{i_epoch + 1 + already_done}.pth")
-            with open(script_directory + f'/saved/json/{save_name}_{i_epoch + 1 + already_done}_epoch_losses.json', 'w') as f:
-                json.dump(epoch_losses, f)
+            with open(script_directory + f'/saved/json/{save_name}_{i_epoch + 1 + already_done}_metrics.json', 'w') as f:
+                json.dump(metrics, f)
     
         if eval_tasks is not None:
             with torch.no_grad():
@@ -236,13 +273,13 @@ def train(
                     draw_func=draw_func,
                     arc_ahrm=arc_ahrm,
                     optimizer=optimizer,
-                    epoch_losses=eval_epoch_losses,
+                    metrics=eval_metrics,
                     tasks=eval_tasks,
                     eval_tasks=None,
                     batch_size=batch_size,
                     epochs=1,
                     save_each=save_each,
-                    save_name="eval_" + save_name
+                    save_name="eval_"+save_name
                 )
     
     if batch_size == 0:
@@ -256,24 +293,23 @@ def cv2imshow(img):
 def start(draw_func):
     
     d_model = 512
-    arc_ahrm = ArcAHRM(d_model).to("cuda").to(torch.bfloat16)
-    base_lr = 1e-3
+    arc_ahrm = ArcAHRM(d_model, option=2, uses_combiner=False).to("cuda").to(torch.bfloat16)
+    base_lr = 1e-3 / 5
     emb_lr = base_lr / 20 #250 #/ (286 - 13)
     rec_lr = base_lr
     dec_lr = emb_lr
     optimizer = torch.optim.Adam([
         {"params": arc_ahrm.ahrm.parameters(), "lr": rec_lr},
-        #{"params": arc_ahrm.grid_embed.parameters(), "lr": emb_lr},
         {"params": arc_ahrm.grid_combiner.parameters(), "lr": emb_lr},
         {"params": arc_ahrm.grid_decode.parameters(), "lr": dec_lr}
         ])
 
-    epoch_losses = []
+    metrics = {"loss": [], "accuracy": []}
     '''
     checkpoint = torch.load("./saved-new/pt/arc_ahrm_tet_rec_1e-3_emb_1e-4_400.pth")
     arc_ahrm.load_state_dict(checkpoint["model_state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-    epoch_losses = checkpoint["epoch_losses"]
+    metrics = checkpoint["metrics"]
     '''
     directories = [
         #"/ARC-AGI/data/training",
@@ -282,7 +318,10 @@ def start(draw_func):
         "/ARC-AGI-2/data/evaluation"
     ]
 
-    name = "arc_" + arc_ahrm.ahrm.name + "_"
+    name = arc_ahrm.ahrm.name
+    name += "_arc_"
+    if not HRMNodeValue.grad_only_lowest:
+        name += "grad_everything_"
 
     for directory in directories:
         name += directory.split("/")[-1][0]
@@ -305,14 +344,16 @@ def start(draw_func):
             else:
                 tasks[new_key] = new_tasks[new_key]
     
+    tasks = LoadDataset.load_sudoku(script_directory + "/sudoku-extreme-1k/train.csv")
+
     train(
         draw_func=draw_func,
         arc_ahrm=arc_ahrm,
         optimizer=optimizer,
-        epoch_losses=epoch_losses,
+        metrics=metrics,
         tasks=tasks,
         eval_tasks=eval_tasks,
-        batch_size=128-32,
+        batch_size=1, #(128-32)//1,
         epochs=3000,
         save_each=25,
         save_name=name

@@ -79,7 +79,7 @@ class IntNodeValue(NodeValue):
         return last_change
 
 
-if False:
+if True:
     pattern_reader = PatternReader()
 
     IntNodeValue.modulator = 2
