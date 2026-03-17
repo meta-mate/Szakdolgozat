@@ -43,11 +43,16 @@ class MultiGroupCosineScheduler:
                 param_group["lr"] = min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * progress))
 
 
-def calculate_accuracy(prediction, target):
+def calculate_accuracy(prediction, target, for_maze=False):
     misses = torch.where(prediction != target, 1, 0).sum(dim=(1, 2))
-    non_pads = torch.where(target != 0, 1, 0).sum(dim=(1, 2))
+    
+    divisor = 1
+    if not for_maze:
+        divisor = torch.where(target != 0, 1, 0).sum(dim=(1, 2))
+    else:
+        divisor = torch.where(target == 4, 1, 0).sum(dim=(1, 2))
 
-    result = 1 - (misses / non_pads).mean()
+    result = 1 - (misses / divisor).mean()
     return result.item()
 
 
@@ -196,20 +201,20 @@ def train(
                                 images.append(Visualization.draw_grid(latent_grid[random_index], square_size))
                             horizontal_concat = cv2.hconcat(images)
                             
-                            #draw_func(horizontal_concat)
+                            draw_func(horizontal_concat)
 
                             loss = F.cross_entropy(
                                 y.permute(0, 3, 1, 2),
                                 target
                             )
 
-                            accuracy = calculate_accuracy(prediction, target)
+                            accuracy = calculate_accuracy(prediction, target, for_maze=True)
 
                             print(save_name, loss, torch.cuda.memory_allocated() / 1024 / 1024)
                             print("accuracy", accuracy)
 
                             if i == max_iterations - 1:
-                                draw_func(horizontal_concat)
+                                #draw_func(horizontal_concat)
                                 losses.append(loss.item())
                                 accuracies.append(accuracy)
                                 print('losses_avg', np.mean(losses))
@@ -293,7 +298,7 @@ def cv2imshow(img):
 def start(draw_func):
     
     d_model = 512
-    arc_ahrm = ArcAHRM(d_model, option=2, uses_combiner=False).to("cuda").to(torch.bfloat16)
+    arc_ahrm = ArcAHRM(d_model, option=0, uses_combiner=False).to("cuda").to(torch.bfloat16)
     base_lr = 1e-3 / 5
     emb_lr = base_lr / 20 #250 #/ (286 - 13)
     rec_lr = base_lr
@@ -344,7 +349,7 @@ def start(draw_func):
             else:
                 tasks[new_key] = new_tasks[new_key]
     
-    tasks = LoadDataset.load_sudoku(script_directory + "/sudoku-extreme-1k/train.csv")
+    tasks = LoadDataset.load_tasks(script_directory + "/maze-30x30-hard-1k/train.csv", 30, 30)
 
     train(
         draw_func=draw_func,

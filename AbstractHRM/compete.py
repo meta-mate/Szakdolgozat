@@ -126,6 +126,9 @@ def compete(
             if batch_size == 0:
                 break
 
+            batch_loss1 = []
+            batch_loss2 = []
+
             while True:
                 try:
                     print(i_epoch + already_done, "epoch", done_amount, "done from", len(batchable_tasks["train"]))
@@ -240,6 +243,9 @@ def compete(
 
                             print(loss1.item(), loss2.item(), torch.cuda.memory_allocated() / 1024 / 1024)
                             
+                            batch_loss1.append(loss1.item())
+                            batch_loss2.append(loss2.item())
+
                             if i == max_iterations - 1:
                                 epoch_loss1.append(loss1.item())
                                 epoch_loss2.append(loss2.item())
@@ -335,8 +341,9 @@ def cv2imshow(img, name):
 def start(draw_func=cv2imshow):
     
     d_model = 512
-    model1 = ArcAHRM(d_model, option=1).to("cuda").to(torch.bfloat16)
-    model2 = ArcAHRM(d_model, option=3).to("cuda").to(torch.bfloat16)
+    uses_combiner = False
+    model1 = ArcAHRM(d_model, option=0, uses_combiner=uses_combiner).to("cuda").to(torch.bfloat16)
+    model2 = ArcAHRM(d_model, option=2, uses_combiner=uses_combiner).to("cuda").to(torch.bfloat16)
     
     base_lr = 1e-3 / 5
     emb_lr = base_lr / 20 #/ (286 - 13)

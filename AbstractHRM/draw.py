@@ -39,7 +39,7 @@ if __name__ == "__main__":
     if arc_ahrm.reasoning_block.option == 2:
         model_name = "TRM"
     
-    checkpoint = torch.load(f"AbstractHRM/saved/pt/{model_name}_arc_e_rec_1e-3_emb_5e-5_100.pth", weights_only=False)
+    checkpoint = torch.load(f"AbstractHRM/saved/pt/{model_name}_arc_tet_rec_1e-3_emb_5e-5_25.pth", weights_only=False)
     #arc_ahrm.load_state_dict(torch.load("AbstractHRM/saved/pt/arc_ahrm_tet_reasonlr_1000.pt"))
     arc_ahrm.load_state_dict(checkpoint["model_state_dict"])
     #arc_ahrm.eval()

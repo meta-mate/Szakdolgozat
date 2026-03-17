@@ -14,3 +14,7 @@ gpt2-finetuned
 AbstractHRM/ARC
 AbstractHRM/ARC-AGI-2
 AbstractHRM/saved/*
+
+!AbstractHRM/saved/img
+AbstractHRM/saved/img/*
+!AbstractHRM/saved/img/readme

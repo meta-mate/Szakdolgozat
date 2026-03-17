@@ -7,7 +7,7 @@ from load_dataset import LoadDataset
 
 
 class ArcAHRM(nn.Module):
-    def __init__(self, d_model=128, option=0, uses_combiner=False):
+    def __init__(self, d_model=128, option=0, uses_combiner=True):
         super().__init__()
         self.reasoning_block = am.ReasoningBlock(d_model, option=option)
         self.ahrm = AbstractHRM(self.reasoning_block)

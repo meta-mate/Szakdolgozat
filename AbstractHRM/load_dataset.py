@@ -7,25 +7,25 @@ import torch
 
 class LoadDataset:
 
-    def load_sudoku(path):
+    def load_tasks(path, H=9, W=9):
         with open(path, "r") as f:
-            csv_reader = csv.reader(f)
-            tasks = list(csv_reader)
+            reader = csv.reader(f)
+            next(reader)
+            tasks = list(reader)
         
         result = []
-        for i_task, task in enumerate(tasks):
-            if i_task == 0:
-                continue
-            
+        for task in tasks:
             result.append([])
             for io in range(2):
                 result[-1].append([])
                 task_str = task[1 + io]
                 task_str = task_str.replace(".", "0")
-                for i in range(9):
+                replace_map = str.maketrans({" ": "0", "#": "1", "S": "2", "G": "3", "o": "4"})
+                task_str = task_str.translate(replace_map)
+                for i in range(H):
                     result[-1][-1].append([])
-                    for j in range(9):
-                        result[-1][-1][-1].append(int(task_str[i * 9 + j]))
+                    for j in range(W):
+                        result[-1][-1][-1].append(int(task_str[i * H + j]))
 
         result = np.array(result)
         return result
