@@ -1,16 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from AbstractHRM import AbstractHRM
+from AbstractHRM.AbstractHRM import AbstractHRM
 import arc_modules as am
 from load_dataset import LoadDataset
 
 
 class ArcAHRM(nn.Module):
-    def __init__(self, d_model=128, option=0, uses_combiner=True):
+    def __init__(self, d_model=128, option=0, grad_only_last=False, uses_combiner=True):
         super().__init__()
         self.reasoning_block = am.ReasoningBlock(d_model, option=option)
-        self.ahrm = AbstractHRM(self.reasoning_block)
+        self.ahrm = AbstractHRM(self.reasoning_block, grad_only_last)
         self.grid_combiner = am.GridCombiner(d_model)
         self.grid_decode = am.GridDecode(d_model)
         self.combined = None

@@ -1,9 +1,21 @@
 import os
+import sys
 import json
 import csv
 import numpy as np
+import pandas as pd
 import random
 import torch
+import importlib.util
+from pathlib import Path
+from typing import List, Optional
+
+script_directory = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_directory + "/ARC-Task-Generators-Inventory/Framework/")
+sys.path.append(script_directory + "/ARC-Task-Generators-Inventory/")
+
+#from dataset_generator_callable import generate_from_args
+from dataset_generator import generate_dataset
 
 class LoadDataset:
 
@@ -68,7 +80,7 @@ class LoadDataset:
 
     def pad_grid(grid, H_max=30, W_max=30, pad_value=-1):
         H, W = len(grid), len(grid[0])
-        padded = [[pad_value]*W_max for _ in range(H_max)]
+        padded = [[pad_value] * W_max for _ in range(H_max)]
         for r in range(H):
             for c in range(W):
                 padded[r][c] = grid[r][c]
@@ -100,19 +112,28 @@ class LoadDataset:
                 length = len(task[example_type])
                 max_amount[example_type] = max(max_amount[example_type], length)
 
-        max_amount["test"] = 4
+        #max_amount["test"] = 4
         
         for task_id in tasks:
             
             task = tasks[task_id]
+            invalid_task = False
 
             for j in range(len(task["test"])):
                 result["train"].append([])
                 length = max_amount["train"]
                 for i in range(length):
+                    if invalid_task:
+                        break
                     if i < len(task["train"]):
                         example_io = task["train"][i]
                         for grid in example_io.values():
+                            H, W = len(grid), len(grid[0])
+                            if H > 30 or W > 30:
+                                #print(H, W, task_id)
+                                invalid_task = True
+                                result["train"].pop()
+                                break
                             padded_grid = np.array(LoadDataset.pad_grid(grid)) + 1
                             result["train"][-1].append(padded_grid)
                     else:
@@ -123,6 +144,13 @@ class LoadDataset:
                 result["test"].append([])
                 example_io = task["test"][j]
                 for grid in example_io.values():
+                    H, W = len(grid), len(grid[0])
+                    if H > 30 or W > 30:
+                        #print(H, W, task_id)
+                        invalid_task = True
+                        result["train"].pop()
+                        result["test"].pop()
+                        break
                     padded_grid = np.array(LoadDataset.pad_grid(grid)) + 1
                     result["test"][-1].append(padded_grid)
 
@@ -134,29 +162,64 @@ class LoadDataset:
         return result
 
 
-    def augment(tasks):
+    def augment(tasks, logits=None):
         
+        back = logits is not None
+
+        out_logits = logits
+        i_logits = 0
+
         augmentations = {}
 
         for task_id in tasks:
             
-            color_map = [i for i in range(1, 10)]
-            random.shuffle(color_map)
-            color_map = [0] + color_map
-            color_map = np.array(color_map)
-            
-            rotate_amount = random.randint(0, 3)
-            flip_axis = random.randint(0, 2)
+            result_id = color_map = rotate_amount = flip_axis = None
 
-            result_id = task_id
-            result_id += "_" + str(rotate_amount) + "_" + str(flip_axis) + "_"
+            if back:
+                task_id_split = task_id.split("_")
 
-            for i in range(1, len(color_map)):
-                result_id += str(color_map[i])
+                if len(task_id_split) < 4:
+                    return tasks
 
-            augmentations[result_id] = {}
-            augmentations[result_id]["train"] = []
-            augmentations[result_id]["test"] = []
+                result_id = "".join(task_id_split[:-4])
+                
+                color_map = [int(x) for x in task_id_split[-1]]
+                rotate_amount = (4 - int(task_id_split[-3])) % 4
+                flip_axis = int(task_id_split[-2])
+                if rotate_amount % 2 == 1 and flip_axis != 2:
+                    flip_axis = (flip_axis + 1) % 2
+
+                inverted_color_map = [i for i in range(len(color_map))]
+                for i in range(1, len(color_map)):
+                    inverted_color_map[color_map[i]] = i
+                color_map = inverted_color_map
+
+                for i in range(len(tasks[task_id]["eval"])):
+                    logits_view = out_logits[i_logits]
+                    logits_view = logits_view.index_select(dim=-1, index=color_map)
+                    if rotate_amount % 4 != 0:
+                        logits_view = torch.rot90(logits_view, rotate_amount, dim=(-3, -2))
+                    if flip_axis != 2:
+                        logits_view = torch.flip(logits_view, dim=(-3, -2))
+
+                    i_logits += 1
+
+            else:
+                color_map = [i for i in range(1, 10)]
+                random.shuffle(color_map)
+                color_map = [0] + color_map
+                color_map = np.array(color_map)
+                
+                rotate_amount = random.randint(0, 3)
+                flip_axis = random.randint(0, 2)
+
+                result_id = task_id
+                result_id += "_" + str(rotate_amount) + "_" + str(flip_axis) + "_"
+
+                for i in range(1, len(color_map)):
+                    result_id += str(color_map[i])
+
+            augmentations[result_id] = {"train": [], "test": []}
 
             for example_type in augmentations[result_id]:
                 #dictionary of "train" or "test"
@@ -171,7 +234,7 @@ class LoadDataset:
                         grid = np.array(example_io[example_io_key])
                         grid = LoadDataset.recolor_grid(grid, color_map)
 
-                        if rotate_amount != 0:
+                        if rotate_amount % 4 != 0:
                             grid = np.rot90(grid, rotate_amount)
                         if flip_axis != 2:
                             grid = np.flip(grid, flip_axis)
@@ -179,4 +242,74 @@ class LoadDataset:
                         augmentations[result_id][example_type][-1][example_io_key] = grid
 
 
-        return augmentations
+        return augmentations, out_logits
+
+    def generate_from_args(
+        generator_folders: Optional[List[str]] = None,
+        generator_files: Optional[List[str]] = None,
+        nr_of_tasks: int = 100,
+        output: str = "datasets",
+    ) -> None:
+        """Call `generate_dataset` using function arguments instead of CLI flags."""
+        if not generator_folders and not generator_files:
+            generators_root = Path("Generators")
+
+            if not generators_root.exists():
+                print("Generators folder not found.")
+                return
+
+            generator_folders = [
+                str(d)
+                for d in generators_root.iterdir()
+                if d.is_dir()
+                and not d.name.startswith(".")
+                and not d.name.startswith("_")
+            ]
+
+        relative_directory = script_directory.replace(os.getcwd(), "") + "/ARC-Task-Generators-Inventory/"
+        for path_list in [generator_folders, generator_files]:
+            for i in range(len(path_list)):
+                path_list[i] = relative_directory + "/" + path_list[i]
+                path_list[i] = path_list[i][1:]
+
+        generate_dataset(
+            generator_folders or [],
+            generator_files or [],
+            nr_of_tasks,
+            output,
+        )
+
+    def generate_tasks(
+        generator_folders: Optional[List[str]] = None,
+        generator_files: Optional[List[str]] = None,
+        nr_of_tasks: int = 100,
+        output: str = "datasets",
+    ) -> None:
+        LoadDataset.generate_from_args(
+            generator_folders=generator_folders,
+            generator_files=generator_files,
+            nr_of_tasks=nr_of_tasks,
+            output=output,
+        )
+        
+        path = output 
+        path += "/" if path[-1] != "/" else ""
+        path += "all" if len(generator_folders) != 1 else generator_folders[0].split("/")[-1]
+        path += ".csv"
+
+        tasks = {}
+
+        with open(path, "r") as f:
+            reader = csv.DictReader(f)
+            tasks = {row['generator_name']: json.loads(row['data']) for row in reader}
+
+        return tasks
+
+
+if __name__ == "__main__":
+    LoadDataset.generate_tasks(
+        generator_folders=["Generators/ARC-AGI-2/Train", "Generators/ARC-AGI-2/Eval"],
+        generator_files=[], #["Generators/ARC-AGI-1/Train/task2dee498d.py"],
+        nr_of_tasks=1,
+        output="AbstractHRM/datasets",
+    )

@@ -113,7 +113,9 @@ class Name():
         if self.is_simple():
             if self.simple_value > 0:
                 self.simple_value += 1
-            else:
+            elif self.simple_value < 0:
+                self.simple_value -= 1
+            elif False:
                 self.pattern_reader = PatternReader()
                 for i in range(3):
                     self.pattern_reader.interpretation(NameValue(False))

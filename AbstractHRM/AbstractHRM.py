@@ -8,8 +8,6 @@ import gc
 
 class HRMNodeValue(NodeValue):
 
-    grad_only_lowest = False
-
     def __init__(self, value, is_empty=False):
         super().__init__(value, is_empty)
 
@@ -17,7 +15,7 @@ class HRMNodeValue(NodeValue):
         raise NotImplementedError("Use step() method instead!")
     
     def create_empty(self):
-        return HRMNodeValue(None)
+        return HRMNodeValue(None, True)
 
     def copy(self):
         return None
@@ -33,19 +31,68 @@ class HRMNodeValue(NodeValue):
                 node.values.nodeat(i).value.value = None
         gc.collect()
     
-    def step(pattern_reader, block, x_lowest, x_greatest):
+    def calculate_values(pattern_reader, block, x_lowest, x_greatest, grad_only_last):
         
         last_change = pattern_reader.interpretation(HRMNodeValue(x_lowest))
         
         node_list = pattern_reader.node_list
 
+        last_change_index = 0
+
+        for i in range(len(node_list) - 1, 0, -1):
+            node = node_list.nodeat(i).value
+            if last_change is node.values.first.value:
+                last_change_index = i
+
+
+        for i in range(1, last_change_index + 1):
+            node = node_list.nodeat(i).value
+            value = node.values.last.value
+
+            if value.is_empty:
+                value.is_empty = False
+
+                x_lesser = node.get_lesser_value(-2).value.detach()
+                x_greater = node.get_lesser_value(-1).value
+                x_previous = x_lowest
+
+                if i < last_change_index and grad_only_last:
+                    with torch.no_grad():
+                        value.value = block(x_lesser, x_greater, x_previous)
+                else:
+                    value.value = block(x_lesser, x_greater, x_previous)
+            
+            if pattern_reader.pattern_length > 2:
+                HRMNodeValue.delete_unusable(pattern_reader)
+
+        if pattern_reader.pattern_length < 2:
+            return x_lowest
+
+        return last_change.value
+            
+    
+    def step(pattern_reader, block, x_lowest, x_greatest, grad_only_last):
+        
+        last_change = pattern_reader.interpretation(HRMNodeValue(x_lowest))
+        
+        node_list = pattern_reader.node_list
+
+        scale = 0.9
+
         started = False
         for i in range(len(node_list) - 1, 0, -1):
             node = node_list.nodeat(i).value
 
+            #scale = 1 - 1.0 / len(node_list)
+            #scale = 1 - float(i) / len(node_list)
+            should_register_hook = True
+            should_register_hook = should_register_hook if not grad_only_last else False
+
             if not started:
                 if last_change is node.values.first.value:
                     started = True
+                    
+                    #scale = 0.01 ** (1/i)
 
                     #calculate its value with a zero greater value
 
@@ -58,16 +105,16 @@ class HRMNodeValue(NodeValue):
                     
                     if i == 1:
                         x_lesser = node.get_lesser_value(-1).value
-                        if HRMNodeValue.grad_only_lowest:
+                        if grad_only_last:
                             value.value = block(x_lesser, x_greater, x_previous)
                     else:
-                        if HRMNodeValue.grad_only_lowest:
+                        if grad_only_last:
                             with torch.no_grad():
                                 value.value = block(x_lesser, x_greater, x_previous)
                         else:
                             x_lesser = x_lesser.detach()
 
-                    if not HRMNodeValue.grad_only_lowest:
+                    if not grad_only_last:
                         value.value = block(x_lesser, x_greater, x_previous)
 
                 else:
@@ -80,6 +127,9 @@ class HRMNodeValue(NodeValue):
             x_lesser = lesser_node.get_lesser_value(-2).value
             x_greater = node.values.last.value.value
             
+            if x_greater.requires_grad and should_register_hook:
+                x_greater.register_hook(lambda grad, s=scale: grad * s)
+
             lesser_value = lesser_node.values.last.value
 
             x_previous = x_lowest
@@ -89,17 +139,18 @@ class HRMNodeValue(NodeValue):
             if i == 2:
                 x_lesser = lesser_node.get_lesser_value(-1).value
                 #x_previous = None
-                if HRMNodeValue.grad_only_lowest:
+                if grad_only_last:
                     lesser_value.value = block(x_lesser, x_greater, x_previous)
             else:
-                if HRMNodeValue.grad_only_lowest:
+                if grad_only_last:
                     with torch.no_grad():
                         lesser_value.value = block(x_lesser, x_greater, x_previous)
                 else:
                     x_lesser = x_lesser.detach()
                 
-            if not HRMNodeValue.grad_only_lowest:
+            if not grad_only_last:
                 lesser_value.value = block(x_lesser, x_greater, x_previous)
+
 
         if pattern_reader.pattern_length > 2:
             HRMNodeValue.delete_unusable(pattern_reader)
@@ -111,10 +162,11 @@ class HRMNodeValue(NodeValue):
 
 class AbstractHRM(nn.Module):
 
-    def __init__(self, block):
+    def __init__(self, block, grad_only_last):
         super().__init__()
         self.pattern_reader = PatternReader()
         self.block = block
+        self.grad_only_last = grad_only_last
 
         self.L_state = None
         self.H_state = None
@@ -142,7 +194,7 @@ class AbstractHRM(nn.Module):
 
     def forward(self, x_lowest, x_greatest):
         if self.block.option == 0:
-            return HRMNodeValue.step(self.pattern_reader, self.block, x_lowest, x_greatest)
+            return HRMNodeValue.step(self.pattern_reader, self.block, x_lowest, x_greatest, self.grad_only_last)
 
         self.pattern_reader.pattern_length += 1
 
@@ -157,7 +209,7 @@ class AbstractHRM(nn.Module):
             for i in range(cycles):
                 x_lesser = x_lowest
                 x_greater = self.L_state
-                if i < cycles - 1 and HRMNodeValue.grad_only_lowest:
+                if i < cycles - 1 and self.grad_only_last:
                     with torch.no_grad():
                         self.L_state = self.block(x_lesser, x_greater)
                 else:
@@ -180,7 +232,7 @@ class AbstractHRM(nn.Module):
                 x_lesser = self.H_state
                 x_greater = self.L_state
                 x_previous = x_greatest
-                if i < H_cycles - 1 and HRMNodeValue.grad_only_lowest:
+                if i < H_cycles - 1 and self.grad_only_last:
                     with torch.no_grad():
                         self.H_state = self.block(x_lesser, x_greater, x_previous)
                 else:
@@ -190,7 +242,7 @@ class AbstractHRM(nn.Module):
                     x_lesser = self.L_state
                     x_greater = self.H_state
                     x_previous = x_lowest
-                    if (j < L_cycles - 1 or i < H_cycles - 1) and HRMNodeValue.grad_only_lowest:
+                    if (j < L_cycles - 1 or i < H_cycles - 1) and self.grad_only_last:
                         with torch.no_grad():
                             self.L_state = self.block(x_lesser, x_greater, x_previous)
                     else:
@@ -214,7 +266,7 @@ class AbstractHRM(nn.Module):
                     x_lesser = self.L_state
                     x_greater = self.H_state
                     x_previous = x_lowest
-                    if (j < L_cycles - 1 or i < H_cycles - 1) and HRMNodeValue.grad_only_lowest:
+                    if (j < L_cycles - 1 or i < H_cycles - 1) and self.grad_only_last:
                         with torch.no_grad():
                             self.L_state = self.block(x_lesser, x_greater, x_previous)
                     else:
@@ -223,7 +275,7 @@ class AbstractHRM(nn.Module):
                 x_lesser = self.H_state
                 x_greater = self.L_state
                 x_previous = x_greatest
-                if i < H_cycles - 1 and HRMNodeValue.grad_only_lowest:
+                if i < H_cycles - 1 and self.grad_only_last:
                     with torch.no_grad():
                         self.H_state = self.block(x_lesser, x_greater, x_previous)
                 else:

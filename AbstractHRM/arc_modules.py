@@ -3,6 +3,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 
+class SwiGLUFFN(nn.Module):
+    def __init__(self, dim: int, hidden_dim: int = None, multiple_of: int = 256):
+        super().__init__()
+        # Standard Transformer FFNs use 4 * dim. 
+        # Scaling by 2/3 keeps total parameters equal to a standard 2-layer FFN.
+        if hidden_dim is None:
+            hidden_dim = int(2 * (4 * dim) / 3)
+            # Round up to a multiple of 256 for hardware/tensor core efficiency
+            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+
+        # Modern LLMs typically omit bias terms in FFN linear layers
+        self.w_gate = nn.Linear(dim, hidden_dim, bias=False)
+        self.w_val = nn.Linear(dim, hidden_dim, bias=False)
+        self.w_out = nn.Linear(hidden_dim, dim, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # F.silu(x) is mathematically identical to Swish(x) with beta=1
+        gate = F.silu(self.w_gate(x))
+        val = self.w_val(x)
+        return self.w_out(gate * val)
+
 class ReasoningBlock(nn.Module):
     def __init__(self, d_model, n_heads=4, dropout=0.1, option=0):
         super().__init__()
@@ -14,11 +35,15 @@ class ReasoningBlock(nn.Module):
         self.cross_attn_lesser_to_greater = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
         #self.cross_attn_greater_to_lesser = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
 
+        '''
         self.ff = nn.Sequential(
             nn.Linear(d_model, 4 * d_model),
             nn.GELU(),
             nn.Linear(4 * d_model, d_model)
         )
+        '''
+
+        self.ff = SwiGLUFFN(d_model)
 
         #self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -38,7 +63,7 @@ class ReasoningBlock(nn.Module):
         B, H, W, D = x_lesser.shape
         x_lesser = x_lesser.view(B, H * W, D)
         x_greater = x_greater.view(B, -1, D)
-        if self.option == 1 or self.option == 3:
+        if self.option == 1 or self.option == 3 or True:
             x_greater = x_greater + x_lesser
             if x_previous is not None:
                 x_greater = x_greater + x_previous.view(B, -1, D)

@@ -342,8 +342,9 @@ def start(draw_func=cv2imshow):
     
     d_model = 512
     uses_combiner = False
-    model1 = ArcAHRM(d_model, option=0, uses_combiner=uses_combiner).to("cuda").to(torch.bfloat16)
-    model2 = ArcAHRM(d_model, option=2, uses_combiner=uses_combiner).to("cuda").to(torch.bfloat16)
+    grad_only_last=False
+    model1 = ArcAHRM(d_model, option=0, grad_only_last=grad_only_last, uses_combiner=uses_combiner).to("cuda").to(torch.bfloat16)
+    model2 = ArcAHRM(d_model, option=2, grad_only_last=grad_only_last, uses_combiner=uses_combiner).to("cuda").to(torch.bfloat16)
     
     base_lr = 1e-3 / 5
     emb_lr = base_lr / 20 #/ (286 - 13)

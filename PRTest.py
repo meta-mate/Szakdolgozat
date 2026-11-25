@@ -79,11 +79,12 @@ class IntNodeValue(NodeValue):
         return last_change
 
 
+length = 13
+
 if True:
     pattern_reader = PatternReader()
 
-    IntNodeValue.modulator = 2
-    length = 13
+    IntNodeValue.modulator = 12
     pattern_reader.interpretation(IntNodeValue(0))
     pattern_reader.calculate_values()
     for i in range(length - 1):
@@ -119,7 +120,7 @@ else:
 
     IntNodeValue.modulator = 2
     elements = []
-    for i in range(13):
+    for i in range(length):
         elements.append(round(random.random()))
 
     calculation_lenghts = []

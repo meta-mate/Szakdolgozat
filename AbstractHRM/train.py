@@ -1,20 +1,22 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from arc_ahrm import ArcAHRM
-from AbstractHRM import HRMNodeValue
-from load_dataset import LoadDataset
+import sys
 import os
+script_directory = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(script_directory)
+from arc_ahrm import ArcAHRM
+from .AbstractHRM import HRMNodeValue
+from load_dataset import LoadDataset
 import math
 import random
 import time
 import json
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
 from visualization import Visualization
-
-
-script_directory = os.path.dirname(os.path.realpath(__file__))
 
 class MultiGroupCosineScheduler:
     def __init__(self, optimizer, scalar, T_0, T_mult, warmup_steps):
@@ -43,16 +45,27 @@ class MultiGroupCosineScheduler:
                 param_group["lr"] = min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * progress))
 
 
-def calculate_accuracy(prediction, target, for_maze=False):
-    misses = torch.where(prediction != target, 1, 0).sum(dim=(1, 2))
+def calculate_accuracy(prediction, target, test_input, for_maze=False):
+    misses = torch.where(prediction != target, 1.0, 0.0)
     
     divisor = 1
     if not for_maze:
-        divisor = torch.where(target != 0, 1, 0).sum(dim=(1, 2))
+        color_occurence = [(target == i).sum().item() for i in range(11)]
+        amount_present = sum(1 for x in color_occurence if x > 0)
+        rarity_score = torch.ones_like(target, dtype=torch.bfloat16)
+        for i in range(len(color_occurence)):
+            if color_occurence[i] <= 0:
+                continue
+            rarity_score[target == i] /= color_occurence[i] ** 2
+        #misses *= rarity_score
+        
+        #divisor = rarity_score.sum(dim=(1, 2))
+        divisor = torch.where(target != test_input, 1, 0).sum(dim=(1, 2))
+        divisor = divisor.clamp(min=1)
     else:
         divisor = torch.where(target == 4, 1, 0).sum(dim=(1, 2))
 
-    result = 1 - (misses / divisor).mean()
+    result = 1 - (misses.sum(dim=(1, 2)) / divisor).clamp(min=0, max=1).mean()
     return result.item()
 
 
@@ -61,8 +74,7 @@ def train(
         arc_ahrm,
         optimizer,
         metrics,
-        tasks,
-        eval_tasks,
+        directories,
         batch_size,
         epochs,
         save_each,
@@ -74,19 +86,6 @@ def train(
 
     warmup_steps = 5
     scheduler = MultiGroupCosineScheduler(optimizer, scalar=5, T_0=100-warmup_steps, T_mult=1, warmup_steps=warmup_steps)
-    
-    if arc_ahrm.uses_combiner:
-        keys = list(tasks.keys())
-        random.shuffle(keys)
-        #tasks = {key: tasks[key] for key in keys}
-    else:
-        #np.random.shuffle(tasks)
-        augmented = tasks #LoadDataset.shuffle_sudoku(tasks)
-
-    if arc_ahrm.uses_combiner:
-        batchable_tasks = LoadDataset.tasks_to_batchable(tasks)
-    else:
-        batchable_tasks = torch.from_numpy(augmented).to('cuda')
 
     total_params = sum(p.numel() for p in arc_ahrm.parameters())
     print(f"Total parameters: {total_params}")
@@ -96,10 +95,51 @@ def train(
     
     total_start_time = time.perf_counter()
 
-    eval_metrics = {"loss": [], "accuracy": []}
+    tasks = None
 
-    already_done = len(metrics["loss"])
+    is_eval = not torch.is_grad_enabled()
+    subcategory = "train" if not is_eval else "eval"
+
+    already_done = len(metrics[subcategory]["loss"])
     for i_epoch in range(epochs):
+
+        if arc_ahrm.uses_combiner:
+            is_generated = "Generators" in directories["train"][0]
+
+            if is_generated:
+                tasks = LoadDataset.generate_tasks(
+                    generator_folders=directories["train"],
+                    generator_files=[],
+                    nr_of_tasks=1,
+                    output="AbstractHRM/datasets/",
+                )
+            elif tasks is None:
+                tasks = {}
+                for directory in directories["train"]:
+                    new_tasks = LoadDataset.load_arc_tasks(script_directory + directory)
+                    tasks.update(new_tasks)
+
+            
+            augmented = tasks
+            if i_epoch > 0:
+                keys = list(tasks.keys())
+                random.shuffle(keys)
+                tasks = {key: tasks[key] for key in keys}
+                if not is_generated:
+                    augmented = LoadDataset.augment(tasks)
+            batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
+        else:
+            if tasks is None:
+                tasks = []
+                for directory in directories["train"]:
+                    d = 30 if "maze" in directory else 9
+                    tasks += LoadDataset.load_tasks(script_directory + directory, d, d)
+
+            augmented = tasks
+            if i_epoch > 0:
+                np.random.shuffle(tasks)
+                augmented = LoadDataset.shuffle_sudoku(tasks)
+            batchable_tasks = torch.from_numpy(augmented).to('cuda')
 
         batchable_length = 0
         if arc_ahrm.uses_combiner:
@@ -171,7 +211,7 @@ def train(
                     for inner_epoch in range(1):
                         start_time = time.perf_counter()
                         for i in range(max_iterations):
-                            if i < 0 or (i < 1 and arc_ahrm.ahrm.block.option == 0):
+                            if i < max_iterations - 1 and arc_ahrm.ahrm.grad_only_last or i < 1 and arc_ahrm.ahrm.block.option == 0:
                                 with torch.no_grad():
                                     y = arc_ahrm(x_train, x_test)
                                 continue
@@ -208,10 +248,15 @@ def train(
                                 target
                             )
 
-                            accuracy = calculate_accuracy(prediction, target, for_maze=True)
+                            if i < max_iterations - 1:
+                                loss = loss * (arc_ahrm.ahrm.block.calls / 273)
 
-                            print(save_name, loss, torch.cuda.memory_allocated() / 1024 / 1024)
-                            print("accuracy", accuracy)
+                            accuracy = calculate_accuracy(prediction, target, x_test)
+
+
+                            if i == max_iterations - 1:
+                                print(save_name, loss, torch.cuda.memory_allocated() / 1024 / 1024)
+                                print("accuracy", accuracy)
 
                             if i == max_iterations - 1:
                                 #draw_func(horizontal_concat)
@@ -240,23 +285,12 @@ def train(
                     if batch_size == 0:
                         break
         
-        metrics["loss"].append(np.mean(losses))
-        metrics["accuracy"].append(np.mean(accuracies))
+        metrics[subcategory]["loss"].append(np.mean(losses))
+        metrics[subcategory]["accuracy"].append(np.mean(accuracies))
         losses.clear()
         accuracies.clear()
         
         #scheduler.step(i_epoch + already_done)
-
-        if arc_ahrm.uses_combiner:
-            keys = list(tasks.keys())
-            random.shuffle(keys)
-            tasks = {key: tasks[key] for key in keys}
-            augmented = LoadDataset.augment(tasks)
-            batchable_tasks =  LoadDataset.tasks_to_batchable(augmented)
-        else:
-            np.random.shuffle(tasks)
-            augmented = LoadDataset.shuffle_sudoku(tasks)
-            batchable_tasks = torch.from_numpy(augmented).to('cuda')
     
         if (i_epoch + 1 + already_done) % save_each == 0:
 
@@ -272,19 +306,20 @@ def train(
             with open(script_directory + f'/saved/json/{save_name}_{i_epoch + 1 + already_done}_metrics.json', 'w') as f:
                 json.dump(metrics, f)
     
-        if eval_tasks is not None:
+        if directories["eval"]:
+            eval_directories = {"train": directories["eval"], "eval": []}
+
             with torch.no_grad():
                 train(
                     draw_func=draw_func,
                     arc_ahrm=arc_ahrm,
                     optimizer=optimizer,
-                    metrics=eval_metrics,
-                    tasks=eval_tasks,
-                    eval_tasks=None,
+                    metrics=metrics,
+                    directories=eval_directories,
                     batch_size=batch_size,
                     epochs=1,
                     save_each=save_each,
-                    save_name="eval_"+save_name
+                    save_name=save_name
                 )
     
     if batch_size == 0:
@@ -294,11 +329,16 @@ def cv2imshow(img):
     cv2.imshow('input-target-prediction', img)
     cv2.waitKey(1)
 
+plt.style.use('dark_background')
+def plt_show(img):
+    clear_output(wait=False)
+    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    plt.show()
 
 def start(draw_func):
     
     d_model = 512
-    arc_ahrm = ArcAHRM(d_model, option=0, uses_combiner=False).to("cuda").to(torch.bfloat16)
+    arc_ahrm = ArcAHRM(d_model, option=2, grad_only_last=False, uses_combiner=True).to("cuda").to(torch.bfloat16)
     base_lr = 1e-3 / 5
     emb_lr = base_lr / 20 #250 #/ (286 - 13)
     rec_lr = base_lr
@@ -309,23 +349,42 @@ def start(draw_func):
         {"params": arc_ahrm.grid_decode.parameters(), "lr": dec_lr}
         ])
 
-    metrics = {"loss": [], "accuracy": []}
+    metrics = {
+        "train": {"loss": [], "accuracy": []},
+        "eval": {"loss": [], "accuracy": []}
+        }
     '''
     checkpoint = torch.load("./saved-new/pt/arc_ahrm_tet_rec_1e-3_emb_1e-4_400.pth")
     arc_ahrm.load_state_dict(checkpoint["model_state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     metrics = checkpoint["metrics"]
     '''
-    directories = [
-        #"/ARC-AGI/data/training",
-        #"/ARC-AGI/data/evaluation",
-        #"/ARC-AGI-2/data/training",
-        "/ARC-AGI-2/data/evaluation"
-    ]
+    directories = {
+        "train": [
+            #"/ARC-AGI/data/training",
+            #"/ARC-AGI/data/evaluation",
+            #"/ARC-AGI-2/data/training",
+            "/ARC-AGI-2/data/evaluation"
+        ],
+        "eval": [
+
+        ]
+    }
+
+    directories = {
+        "train": [
+            "Generators/ARC-AGI-1/Train",
+            "Generators/ARC-AGI-1/Eval",
+            "Generators/ARC-AGI-2/Train"
+        ],
+        "eval": [
+            "Generators/ARC-AGI-2/Eval"
+        ]
+    }
 
     name = arc_ahrm.ahrm.name
     name += "_arc_"
-    if not HRMNodeValue.grad_only_lowest:
+    if not arc_ahrm.ahrm.grad_only_last:
         name += "grad_everything_"
 
     for directory in directories:
@@ -336,29 +395,17 @@ def start(draw_func):
 
     print(name)
 
-    tasks = {}
-    eval_tasks = None #LoadDataset.load_arc_tasks(script_directory + "/ARC-AGI-2/data/evaluation")
-
-    for directory in directories:
-        new_tasks = LoadDataset.load_arc_tasks(script_directory + directory)
-        tasks.update(new_tasks)
-        continue
-        for new_key in new_tasks.keys():
-            if new_key in tasks:
-                del tasks[new_key]
-            else:
-                tasks[new_key] = new_tasks[new_key]
-    
-    tasks = LoadDataset.load_tasks(script_directory + "/maze-30x30-hard-1k/train.csv", 30, 30)
+    batch_size = 4
+    if not arc_ahrm.ahrm.grad_only_last:
+        batch_size = batch_size // 4
 
     train(
         draw_func=draw_func,
         arc_ahrm=arc_ahrm,
         optimizer=optimizer,
         metrics=metrics,
-        tasks=tasks,
-        eval_tasks=eval_tasks,
-        batch_size=1, #(128-32)//1,
+        directories=directories,
+        batch_size=batch_size, #(128-32)//1,
         epochs=3000,
         save_each=25,
         save_name=name
@@ -366,4 +413,4 @@ def start(draw_func):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    start(cv2imshow)
+    start(plt_show)
