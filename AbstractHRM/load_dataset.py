@@ -267,10 +267,17 @@ class LoadDataset:
             ]
 
         relative_directory = script_directory.replace(os.getcwd(), "") + "/ARC-Task-Generators-Inventory/"
-        for path_list in [generator_folders, generator_files]:
+        if relative_directory[0] == "/": relative_directory = relative_directory[1:]
+        if relative_directory[-1] != "/": relative_directory += "/"
+        
+        def add_relative_path(path_list):       
+            result = []
             for i in range(len(path_list)):
-                path_list[i] = relative_directory + "/" + path_list[i]
-                path_list[i] = path_list[i][1:]
+                result.append(relative_directory + path_list[i])
+            return result
+
+        generator_folders = add_relative_path(generator_folders)
+        generator_files = add_relative_path(generator_files)
 
         generate_dataset(
             generator_folders or [],
@@ -301,7 +308,7 @@ class LoadDataset:
 
         with open(path, "r") as f:
             reader = csv.DictReader(f)
-            tasks = {row['generator_name']: json.loads(row['data']) for row in reader}
+            tasks = {row['task_id']: json.loads(row['data']) for row in reader}
 
         return tasks
 

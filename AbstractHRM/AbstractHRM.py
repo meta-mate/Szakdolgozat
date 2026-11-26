@@ -77,7 +77,8 @@ class HRMNodeValue(NodeValue):
         
         node_list = pattern_reader.node_list
 
-        scale = 0.9
+        should_register_hook = False
+        scale = 0.1 ** (1/66)
 
         started = False
         for i in range(len(node_list) - 1, 0, -1):
@@ -85,8 +86,6 @@ class HRMNodeValue(NodeValue):
 
             #scale = 1 - 1.0 / len(node_list)
             #scale = 1 - float(i) / len(node_list)
-            should_register_hook = True
-            should_register_hook = should_register_hook if not grad_only_last else False
 
             if not started:
                 if last_change is node.values.first.value:

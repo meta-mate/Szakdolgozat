@@ -60,7 +60,9 @@ def calculate_accuracy(prediction, target, test_input, for_maze=False):
         #misses *= rarity_score
         
         #divisor = rarity_score.sum(dim=(1, 2))
-        divisor = torch.where(target != test_input, 1, 0).sum(dim=(1, 2))
+        #divisor = torch.where(target != 0, 1, 0)
+        divisor = torch.where(target != test_input.squeeze(1), 1, 0)
+        divisor = divisor.sum(dim=(1, 2))
         divisor = divisor.clamp(min=1)
     else:
         divisor = torch.where(target == 4, 1, 0).sum(dim=(1, 2))
@@ -338,7 +340,7 @@ def plt_show(img):
 def start(draw_func):
     
     d_model = 512
-    arc_ahrm = ArcAHRM(d_model, option=2, grad_only_last=False, uses_combiner=True).to("cuda").to(torch.bfloat16)
+    arc_ahrm = ArcAHRM(d_model, option=0, grad_only_last=False, uses_combiner=True).to("cuda").to(torch.bfloat16)
     base_lr = 1e-3 / 5
     emb_lr = base_lr / 20 #250 #/ (286 - 13)
     rec_lr = base_lr
@@ -375,7 +377,8 @@ def start(draw_func):
         "train": [
             "Generators/ARC-AGI-1/Train",
             "Generators/ARC-AGI-1/Eval",
-            "Generators/ARC-AGI-2/Train"
+            "Generators/ARC-AGI-2/Train",
+            #"Generators/ARC-AGI-2/Eval"
         ],
         "eval": [
             "Generators/ARC-AGI-2/Eval"
@@ -413,4 +416,4 @@ def start(draw_func):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    start(plt_show)
+    start(cv2imshow)
